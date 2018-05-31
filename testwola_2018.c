@@ -202,17 +202,17 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
         ThreadArgs[9] = (void*)&ThreadIDList[t]; // assign the threadID
         WaitForThread[t] = 1;
         ThreadList[t] = (HANDLE)_beginthreadex(NULL,0,&myfunc,(void*)ThreadArgs,0,NULL);
-        // printf("Beginning threadID %i..%i\n",(int)ThreadIDList[t],WaitForThread[t]);
+        printf("Beginning threadID %i..%i\n",(int)ThreadIDList[t],WaitForThread[t]);
 		
-//         // for dual processors... but seems slower?
-// 		GetThreadGroupAffinity(ThreadList[t], &currentGroupAffinity);
-// 		printf("Beginning thread %i, has group affinity %i by default \n", (int)ThreadIDList[t], (int)currentGroupAffinity.Group);
-// 
-// 		newGroupAffinity = currentGroupAffinity;
-// 		newGroupAffinity.Group = t%2;
-// 		SetThreadGroupAffinity(ThreadList[t], &newGroupAffinity, NULL);
-// 		GetThreadGroupAffinity(ThreadList[t], &currentGroupAffinity);
-// 		printf("SET: Thread %i has group affinity %i  \n", (int)ThreadIDList[t], (int)currentGroupAffinity.Group);
+        // for dual processors... but seems slower?
+		GetThreadGroupAffinity(ThreadList[t], &currentGroupAffinity);
+		printf("Beginning thread %i, has group affinity %i by default \n", (int)ThreadIDList[t], (int)currentGroupAffinity.Group);
+
+		newGroupAffinity = currentGroupAffinity;
+		newGroupAffinity.Group = t%2;
+		SetThreadGroupAffinity(ThreadList[t], &newGroupAffinity, NULL);
+		GetThreadGroupAffinity(ThreadList[t], &currentGroupAffinity);
+		printf("SET: Thread %i has group affinity %i  \n", (int)ThreadIDList[t], (int)currentGroupAffinity.Group);
     }
     
     WaitForMultipleObjects(nThreads,ThreadList,1,INFINITE);
