@@ -74,7 +74,7 @@ unsigned __stdcall myfunc(void *pArgs){
 	
 	// new thread vars for multi-channel process
 	int chnl_startIdx;
-	Ipp64f realNorm, imagNorm;
+	Ipp64f *powerSpectrum;
 	
 	// assignments from Args passed in
 	cutout = (double*)Args[0];
@@ -105,24 +105,20 @@ unsigned __stdcall myfunc(void *pArgs){
     // allow new threads to be assigned in mexFunction
     WaitForThread[t_ID]=0;
 
+	powerSpectrum = (Ipp64f*)ippsMalloc_64f_L(chanLength);
     
 	// pick CHANNEL based on thread number
 	for (k = t_ID; k<numChans; k = k+nThreads){
 		chnl_startIdx = k*chanLength;
 		curr_shift = (int)shifts[0] - 1;
-		ippsNorm_L2_64f(&channels[chnl_startIdx + curr_shift], fftlen, &realNorm);
-		ippsNorm_L2_64f(&channels_i[chnl_startIdx + curr_shift], fftlen, &imagNorm); // basically calculate the norms for the first shift directly
-		y_pwr = realNorm*realNorm + imagNorm*imagNorm;
+		// calculate power spectrum for whole channel
+		ippsPowerSpectr_64f(&channels[chnl_startIdx], &channels_i[chnl_startIdx], powerSpectrum, chanLength);
 		
 		// // run through all the shiftPts
 		for (i = 0; i<shiftPts; i++){
 			curr_shift = (int)shifts[i]-1;
 		
-			// for every loop after the first, adjust the y_pwr by adding next sample and deducting first
-			if (i>0){
-				y_pwr = y_pwr + channels[chnl_startIdx + curr_shift + fftlen - 1]*channels[chnl_startIdx + curr_shift + fftlen - 1] + channels_i[chnl_startIdx + curr_shift + fftlen - 1]*channels_i[chnl_startIdx + curr_shift + fftlen - 1]; // first we add the new sample energy
-				y_pwr = y_pwr - (channels[chnl_startIdx + curr_shift - 1]*channels[chnl_startIdx + curr_shift - 1]) - (channels_i[chnl_startIdx + curr_shift - 1]*channels_i[chnl_startIdx + curr_shift - 1]); // then deduct the sample we just left behind
-			}
+			ippsSum_64f(&powerSpectrum[curr_shift], fftlen, &y_pwr);
 
             dotstar_splitsplit2fftw(cutout, cutout_i, &channels[chnl_startIdx + curr_shift], &channels_i[chnl_startIdx + curr_shift], &fin[fftlen*t_ID], fftlen);
 
