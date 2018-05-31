@@ -14,39 +14,10 @@
 #include <process.h>
 #include "ipp.h"
 
-static volatile int WaitForThread[6];
-const int nThreads = 6;
+static volatile int WaitForThread[24];
+const int nThreads = 24;
 // test fftw_plans array on stack for threads, works
-fftw_plan allplans[6]; // REMEMBER TO CHECK FFTW PLANS CREATION IN THE ENTRY FUNCTION
-
-void dotstar_splitsplit2fftw(double *r_x, double *i_x, double *r_y, double *i_y, fftw_complex *out, int len){
-	int i;
-    double A, B, C;
-	for (i=0;i<len;i++){
-        A = i_x[i] * i_y[i];
-        B = r_x[i] * r_y[i];
-        out[i][0] = B - A;
-        C = (r_x[i] + i_x[i])*(r_y[i] + i_y[i]);
-        out[i][1] = C - B - A;
-	}
-}
-
-
-// void stridedcpy2complex(fftw_complex *out, double *in_r, double *in_i, int len){ // len is length of in arrays, out length is double of that due to complex
-//     int i;
-//     for (i=0;i<len;i++){ // unrolling loops does not seem to help
-//         out[i][0] = in_r[i];
-//         out[i][1] = in_i[i];
-//     }
-// }
-// 
-// void stridedcpy2ri(fftw_complex *in, double *out_r, double *out_i, int len){
-//     int i;
-//     for (i=0;i<len;i++){
-//         out_r[i] = in[i][0];
-//         out_i[i] = in[i][1];
-//     }
-// }
+fftw_plan allplans[24]; // REMEMBER TO CHECK FFTW PLANS CREATION IN THE ENTRY FUNCTION
 
 double abs_fftwcomplex(fftw_complex in){
 	double val = sqrt(in[0]*in[0] + in[1]*in[1]);
@@ -56,7 +27,8 @@ double abs_fftwcomplex(fftw_complex in){
 unsigned __stdcall myfunc(void *pArgs){
     void **Args = (void**)pArgs;
 	//declare inputs
-	double *cutout, *cutout_i, *channels, *channels_i, *shifts;
+	mxComplexDouble *cutout, *channels;
+	double *shifts;
 	double *cutout_pwr_ptr, cutout_pwr;
 	int *shiftPts_ptr, shiftPts, *fftlen_ptr, fftlen, *numChans_ptr, numChans, *chanLength_ptr, chanLength;
 	fftw_complex *fin, *fout;
@@ -77,10 +49,10 @@ unsigned __stdcall myfunc(void *pArgs){
 	Ipp64f *powerSpectrum;
 	
 	// assignments from Args passed in
-	cutout = (double*)Args[0];
-	cutout_i = (double*)Args[1];
-	channels = (double*)Args[2];
-	channels_i = (double*)Args[3];
+	cutout = (mxComplexDouble*)Args[0];
+	// cutout_i = (double*)Args[1];
+	channels = (mxComplexDouble*)Args[2];
+	// channels_i = (double*)Args[3];
 	numChans_ptr = (int*)Args[4];
 	numChans = (int)numChans_ptr[0];
 	chanLength_ptr = (int*)Args[5];
@@ -112,7 +84,7 @@ unsigned __stdcall myfunc(void *pArgs){
 		chnl_startIdx = k*chanLength;
 		curr_shift = (int)shifts[0] - 1;
 		// calculate power spectrum for whole channel
-		ippsPowerSpectr_64f(&channels[chnl_startIdx], &channels_i[chnl_startIdx], powerSpectrum, chanLength);
+		ippsPowerSpectr_64fc((Ipp64fc*)&channels[chnl_startIdx], powerSpectrum, chanLength);
 		
 		// // run through all the shiftPts
 		for (i = 0; i<shiftPts; i++){
@@ -120,7 +92,7 @@ unsigned __stdcall myfunc(void *pArgs){
 		
 			ippsSum_64f(&powerSpectrum[curr_shift], fftlen, &y_pwr);
 
-            dotstar_splitsplit2fftw(cutout, cutout_i, &channels[chnl_startIdx + curr_shift], &channels_i[chnl_startIdx + curr_shift], &fin[fftlen*t_ID], fftlen);
+			ippsMul_64fc((Ipp64fc*)cutout,(Ipp64fc*)&channels[chnl_startIdx + curr_shift], (Ipp64fc*)&fin[fftlen*t_ID], fftlen);
 
             fftw_execute(allplans[t_ID]);
 		
@@ -145,7 +117,8 @@ unsigned __stdcall myfunc(void *pArgs){
 void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
     // declare variables
     int i;
-    double *cutout, *cutout_i, *channels, *channels_i, *shifts; // direct matlab inputs are always in doubles
+	mxComplexDouble *cutout, *channels;
+    double *shifts; // direct matlab inputs are always in doubles
 	double cutout_pwr;
 	int	shiftPts, numChans, chanLength;
 	int m, fftlen;
@@ -175,13 +148,11 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
         mexErrMsgIdAndTxt("MyToolbox:arrayProduct:nrhs","2 Inputs required.");
     }
 
-    cutout = mxGetPr(prhs[0]); 
-    cutout_i = mxGetPi(prhs[0]);
-	channels = mxGetPr(prhs[1]); 
-	channels_i = mxGetPi(prhs[1]);
+    cutout = mxGetComplexDoubles(prhs[0]); 
+	channels = mxGetComplexDoubles(prhs[1]); 
 	numChans = (int)mxGetScalar(prhs[2]);
 	cutout_pwr = mxGetScalar(prhs[3]);
-	shifts = mxGetPr(prhs[4]);
+	shifts = mxGetDoubles(prhs[4]);
     
     m = (int)mxGetM(prhs[0]);
     fftlen = m*(int)mxGetN(prhs[0]); // this is the length of the fft, assume its only 1-D so we just take the product
@@ -201,8 +172,8 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
     plhs[1] = mxCreateNumericMatrix((mwSize)(shiftPts),(mwSize)(numChans), mxINT32_CLASS,mxREAL); //initializes to 0
     
     /* get a pointer to the real data in the output matrix */
-    allproductpeaks = mxGetPr(plhs[0]);
-    allfreqlist_inds = (int*)mxGetPr(plhs[1]);
+    allproductpeaks = mxGetDoubles(plhs[0]);
+    allfreqlist_inds = (int*)mxGetInt32s(plhs[1]);
     
 	
     // ====== ALLOC VARS FOR FFT IN THREADS BEFORE PLANS ====================
@@ -224,9 +195,9 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	// ================================================================
 	// ======== ATTACH VARS TO ARGS =======================
 	ThreadArgs[0] = (void*)cutout;
-	ThreadArgs[1] = (void*)cutout_i;
+	// ThreadArgs[1] = (void*)cutout_i;
 	ThreadArgs[2] = (void*)channels;
-	ThreadArgs[3] = (void*)channels_i;
+	// ThreadArgs[3] = (void*)channels_i;
 	ThreadArgs[4] = (void*)&numChans;
 	ThreadArgs[5] = (void*)&chanLength;
 	ThreadArgs[6] = (void*)&cutout_pwr;
@@ -273,17 +244,3 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
     mxFree(ThreadList);
     mxFree(ThreadArgs);
 }
-
-// // NO POINT IN USING THIS, WOULD HAVE TO DO .* FIRST ANYWAY
-// void forwardShiftEleComplex(double *in_r_cut, double *in_i_cut, fftw_complex *curr, int shift, int len){ // in_r_cut and in_i_cut should only be 'shift' elements long
-    // int i;
-	// memmove(&curr[0],&curr[shift],(len-shift)*sizeof(fftw_complex)); // shifts the elements from index 'shift' onwards forward towards the first index
-	// // for (i=0;i<len-shift;i++){ // manual memmove of above, this is slower at the 10k length array benchmark at least
-		// // curr[i][0] = curr[i+1][0];
-		// // curr[i][1] = curr[i+1][1];
-	// // }
-    // for (i=0;i<shift;i++){
-        // curr[i+len-shift][0] = in_r_cut[i];
-		// curr[i+len-shift][1] = in_i_cut[i];
-    // }
-// }
