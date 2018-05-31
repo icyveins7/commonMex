@@ -21,10 +21,10 @@
 #include <windows.h>
 #include <process.h>
 
-static volatile int WaitForThread[12];
-const int nThreads = 12;
+static volatile int WaitForThread[24];
+const int nThreads = 24;
 // test fftw_plans array on stack for threads, works
-fftw_plan allplans[12]; // REMEMBER TO CHECK FFTW PLANS CREATION IN THE ENTRY FUNCTION
+fftw_plan allplans[24]; // REMEMBER TO CHECK FFTW PLANS CREATION IN THE ENTRY FUNCTION
 
 unsigned __stdcall myfunc(void *pArgs){
     void **Args = (void**)pArgs;
@@ -35,6 +35,7 @@ unsigned __stdcall myfunc(void *pArgs){
     int *Dec_ptr, Dec, *L_ptr, L;
 	fftw_complex *fin, *fout;
 	//declare outputs
+    mxComplexDouble tempout; // put on stack first?
 	mxComplexDouble *out;
 
 	//declare thread variables
@@ -79,7 +80,7 @@ unsigned __stdcall myfunc(void *pArgs){
             for (b = 0; b<L/N; b++){
                 if (n - (b*N+a) >= 0){
                     fin[a + offset][0] = fin[a + offset][0] + y[n-(b*N+a)].real * f_tap[b*N+a];
-                    fin[a + offset][1] = fin[a + offset][1] + y[n-(b*N+a)].imag * f_tap[b*N+a]; // wtf why can't we read y??
+                    fin[a + offset][1] = fin[a + offset][1] + y[n-(b*N+a)].imag * f_tap[b*N+a];
                 } // fin is fftw_complex
             }
         }
@@ -116,6 +117,7 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
     fftw_complex *fout;
 	
 	// //reserve stuff for threads
+	GROUP_AFFINITY currentGroupAffinity, newGroupAffinity;
     double *ThreadIDList;
     void **ThreadArgs;
     int t, sleep; // for loops over threads
@@ -200,7 +202,17 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
         ThreadArgs[9] = (void*)&ThreadIDList[t]; // assign the threadID
         WaitForThread[t] = 1;
         ThreadList[t] = (HANDLE)_beginthreadex(NULL,0,&myfunc,(void*)ThreadArgs,0,NULL);
-        printf("Beginning threadID %i..%i\n",(int)ThreadIDList[t],WaitForThread[t]);
+        // printf("Beginning threadID %i..%i\n",(int)ThreadIDList[t],WaitForThread[t]);
+		
+//         // for dual processors... but seems slower?
+// 		GetThreadGroupAffinity(ThreadList[t], &currentGroupAffinity);
+// 		printf("Beginning thread %i, has group affinity %i by default \n", (int)ThreadIDList[t], (int)currentGroupAffinity.Group);
+// 
+// 		newGroupAffinity = currentGroupAffinity;
+// 		newGroupAffinity.Group = t%2;
+// 		SetThreadGroupAffinity(ThreadList[t], &newGroupAffinity, NULL);
+// 		GetThreadGroupAffinity(ThreadList[t], &currentGroupAffinity);
+// 		printf("SET: Thread %i has group affinity %i  \n", (int)ThreadIDList[t], (int)currentGroupAffinity.Group);
     }
     
     WaitForMultipleObjects(nThreads,ThreadList,1,INFINITE);
