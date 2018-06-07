@@ -5,7 +5,6 @@
 #include <process.h>
 #include <limits.h>
 #include "mex.h"
-#include "ipp.h"
 
 // should be enough to max out the 10gbps
 #define NUM_THREADS 4 
@@ -15,8 +14,7 @@ struct thread_data{
     int thread_fs;
     int thread_total_num_of_cells;
 	FILE **thread_fp;
-    Ipp16sc *thread_rawdata;
-    mxComplexDouble *thread_data; // final output
+    mxComplexInt16 *thread_rawdata; // final output
 };
 
 struct thread_data thread_data_array[NUM_THREADS];
@@ -30,15 +28,12 @@ unsigned __stdcall thread_reader(void *pArgs){
     int fs = inner_data->thread_fs;
     int total_num_of_cells = inner_data->thread_total_num_of_cells;
     FILE **fp = inner_data->thread_fp;
-    Ipp16sc *rawdata = inner_data->thread_rawdata;
-    mxComplexDouble *data = inner_data->thread_data;
+    mxComplexInt16 *rawdata = inner_data->thread_rawdata;
     
     int i;
     
     for (i = t_ID; i<total_num_of_cells; i=i+NUM_THREADS){ // each thread takes one file
-        fread(&rawdata[i*fs],sizeof(Ipp16sc),fs,fp[i]);
-        // go from 16s to doubles
-        ippsConvert_16s64f_Sfs((Ipp16s*)&rawdata[i*fs], (Ipp64f*)&data[i*fs], fs*2, 0); // scale factor is 2^lastArg so use 2^0 = 1, convert for one file, so fs*2 total doubles since complex
+        fread(&rawdata[i*fs],sizeof(mxComplexInt16),fs,fp[i]);
     }
 
     _endthreadex(0);
@@ -53,9 +48,8 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	int total_num_of_cells, buflen;
 	int status;
     FILE **fp;
-    Ipp16sc *rawdata;
     
-    mxComplexDouble *data;
+    mxComplexInt16 *rawdata;
     int fs;
     
     // thread stuff
@@ -71,18 +65,16 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	}
     	
 	/* create the output matrix */
-    plhs[0] = mxCreateDoubleMatrix(1,fs*total_num_of_cells,mxCOMPLEX);
+    plhs[0] = mxCreateNumericMatrix(1,fs*total_num_of_cells,mxINT16_CLASS,mxCOMPLEX);
     
     /* get a pointer to the real data in the output matrix */
-    data = mxGetComplexDoubles(plhs[0]);
+    rawdata = mxGetComplexInt16s(plhs[0]);
 
     /* the computations */
-    ippInit();
-    mexPrintf("This mexfile uses 4 threads to fully saturate the 10Gbps link,\n does not convert interleaved complex shorts (int16s) to the matlab style of split real and imaginary double arrays.\n");
+    mexPrintf("This mexfile uses 4 threads to fully saturate the 10Gbps link,\ndoes not convert to split real and imaginary double arrays since R2018a no longer requires it.\nThis version outputs in int16s.\n");
     
     // open file pointers
     fp = (FILE**)mxMalloc(sizeof(FILE*)*total_num_of_cells);
-    rawdata = (Ipp16sc*)ippsMalloc_16sc_L(total_num_of_cells*fs);
 	for(i=0;i<total_num_of_cells;i++){
 		cell_element_ptr = mxGetCell(prhs[0],i);
 		buflen = (int)(mxGetN(cell_element_ptr)*sizeof(mxChar)+1);
@@ -104,7 +96,6 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 		thread_data_array[t].thread_total_num_of_cells = total_num_of_cells;
         thread_data_array[t].thread_fp = fp;
         thread_data_array[t].thread_rawdata = rawdata;
-        thread_data_array[t].thread_data = data;
 
 		ThreadList[t] = (HANDLE)_beginthreadex(NULL,0,&thread_reader,(void*)&thread_data_array[t],0,NULL);
 		printf("Starting thread %i \n", thread_data_array[t].thread_t_ID);
@@ -116,5 +107,4 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 
     for (i=0; i<total_num_of_cells; i++){fclose(fp[i]);} // close all file pointers
     mxFree(fp);
-	ippsFree(rawdata);
 }
