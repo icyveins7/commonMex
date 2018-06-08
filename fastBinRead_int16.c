@@ -39,7 +39,7 @@ unsigned __stdcall thread_reader(void *pArgs){
     
     for (i = t_ID; i<total_num_of_cells; i=i+NUM_THREADS){ // each thread takes one file
         fread(&rawdata[i*fs],sizeof(Ipp16sc),fs,fp[i]);
-		ippsCplxToReal(&rawdata[i*fs],&data[i*fs],&data_i[i*fs],fs);
+		ippsCplxToReal_16sc(&rawdata[i*fs],&data[i*fs],&data_i[i*fs],fs);
     }
 
     _endthreadex(0);
