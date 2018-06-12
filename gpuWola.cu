@@ -234,8 +234,7 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	
     //reserve stuff for windows threads
     int t; // for loops over threads
-	HANDLE *ThreadList; // handles to threads
-	ThreadList = (HANDLE*)mxMalloc(NUM_THREADS*sizeof(HANDLE));
+	HANDLE ThreadList[NUM_THREADS]; // handles to threads
     
     // // stuff for pthreads
     // pthread_t ThreadList[NUM_THREADS];
@@ -270,7 +269,8 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	nprimePts = (int)(rawdataLength/Dec);
 	
 	/* create the output matrix ===== TEST WITH COMPLEX DATA*/
-    plhs[0] = mxCreateDoubleMatrix(N,nprimePts,mxCOMPLEX);
+    // plhs[0] = mxCreateDoubleMatrix(N,nprimePts,mxCOMPLEX);
+	plhs[0] = mxCreateUninitNumericMatrix(N,nprimePts,mxDOUBLE_CLASS,mxCOMPLEX);
     /* get a pointer to the real data in the output matrix */
     // out_r = mxGetPr(plhs[0]); 
     // out_i = mxGetPi(plhs[0]); // for pre R2018
@@ -395,7 +395,6 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	fftw_free(fout);
 	// do not free h_ftap! it's your input from matlab!
    
-   cudaDeviceReset();
-   mexAtExit(cleanUp);
-   mxFree(ThreadList);
+   // cudaDeviceReset();
+   // mexAtExit(cleanUp);
 }
