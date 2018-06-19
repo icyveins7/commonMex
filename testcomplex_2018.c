@@ -18,10 +18,33 @@
 // #define dzasum dzasum_
 // #endif
 
-static volatile int WaitForThread[24];
-const int nThreads = 24;
+// timing functions
+double PCFreq = 0.0;
+__int64 CounterStart = 0;
+int StartCounter()
+{
+    LARGE_INTEGER li;
+    if(!QueryPerformanceFrequency(&li))
+    printf("QueryPerformanceFrequency failed!\n");
+
+    PCFreq = ((double)li.QuadPart)/1000.0;
+
+    QueryPerformanceCounter(&li);
+    CounterStart = li.QuadPart;
+	return (int)CounterStart;
+}
+
+int GetCounter()
+{
+    LARGE_INTEGER li;
+    QueryPerformanceCounter(&li);
+    return (int)li.QuadPart;
+}
+
+static volatile int WaitForThread[4];
+const int nThreads = 4;
 // test fftw_plans array on stack for threads, works
-fftw_plan allplans[24]; // REMEMBER TO CHECK FFTW PLANS CREATION IN THE ENTRY FUNCTION
+fftw_plan allplans[4]; // REMEMBER TO CHECK FFTW PLANS CREATION IN THE ENTRY FUNCTION
 
 void dotstar_splitsplit2fftw(double *r_x, double *i_x, double *r_y, double *i_y, fftw_complex *out, int len){
 	int i;
@@ -147,6 +170,12 @@ unsigned __stdcall myfunc(void *pArgs){
 
 /* The gateway function */
 void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
+	// == INITIALIZE TIMING ==
+	int start_t = StartCounter();
+	int end_t;
+	// struct timespec vartime;
+	double totalTime;
+	
     // declare variables
     int i;
     mxComplexDouble *cutout, *y;
@@ -160,8 +189,6 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
     
     fftw_complex *fin;
     fftw_complex *fout;
-    
-	clock_t start, end;
 	
 	// //reserve stuff for threads
     double *ThreadIDList;
@@ -194,6 +221,7 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	shiftPts = (int)mxGetN(prhs[4]); // this is the number of shifts there are
 	
 	/* create the output matrix */
+
     plhs[0] = mxCreateDoubleMatrix(1,(int)shiftPts,mxREAL);
     plhs[1] = mxCreateNumericMatrix(1, (int)shiftPts, mxINT32_CLASS,mxREAL); //initializes to 0
     
@@ -205,19 +233,23 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 
     fin = fftw_alloc_complex(fftlen*nThreads);
     fout = fftw_alloc_complex(fftlen*nThreads);
+
 	// ======== MAKE PLANS BEFORE COMPUTATIONS IN THREADS  ============
-	start = clock();
+	start_t = GetCounter();
     allplans[0] = fftw_plan_dft_1d(fftlen, fin, fout, FFTW_FORWARD, FFTW_ESTIMATE); // FFTW_MEASURE seems to cut execution time by ~10%, but FFTW_ESTIMATE takes ~0.001s whereas MEASURE takes ~0.375s
-    end = clock();
-    printf("Time for 1st single plan measure = %f \n",(double)(end-start)/CLOCKS_PER_SEC);
+	end_t = GetCounter();
+	totalTime = (end_t - start_t)/PCFreq; // in ms
+	printf("Time for 1st plan = %g ms \n",totalTime);
     
-	start = clock();
+	start_t = GetCounter();
     for (i=1;i<nThreads;i++){
         allplans[i] = fftw_plan_dft_1d(fftlen, &fin[fftlen*i], &fout[fftlen*i], FFTW_FORWARD, FFTW_ESTIMATE); // make the other plans, not executing them yet
     }
-    end = clock();
-    printf("Time for 2nd-n'th single plan measure = %f \n",(double)(end-start)/CLOCKS_PER_SEC);
+	end_t = GetCounter();
+	totalTime = (end_t - start_t)/PCFreq; // in ms
+	printf("Time for rest of the plans = %g ms \n",totalTime);
 	// ================================================================
+	start_t = GetCounter();
 	// ======== ATTACH VARS TO ARGS =======================
 	ThreadArgs[0] = (void*)cutout;
 // 	ThreadArgs[1] = (void*)cutout_i;
@@ -257,7 +289,10 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 //         printf("Closing threadID %i.. %i\n",(int)ThreadIDList[t],WaitForThread[t]);
     }
     printf("All threads closed! \n");
-
+	end_t = GetCounter();
+	totalTime = (end_t - start_t)/PCFreq; // in ms
+	printf("Time for threads to finish = %g ms \n",totalTime);
+	
     for (i=0;i<nThreads;i++){fftw_destroy_plan(allplans[i]);}
 
     fftw_free(fin);
@@ -266,4 +301,5 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	mxFree(ThreadIDList);
     mxFree(ThreadList);
     mxFree(ThreadArgs);
+
 }
