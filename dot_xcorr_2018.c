@@ -7,107 +7,141 @@
 #include "mex.h"
 #include <math.h>
 #include "stdio.h"
-#include "fftw3.h"
 #include <time.h>
 #include <string.h>
 #include <windows.h>
 #include <process.h>
 #include "ipp.h"
 
-static volatile int WaitForThread[24];
-const int nThreads = 24;
-// test fftw_plans array on stack for threads, works
-fftw_plan allplans[24]; // REMEMBER TO CHECK FFTW PLANS CREATION IN THE ENTRY FUNCTION
+#define NUM_THREADS 24
 
-double abs_fftwcomplex(fftw_complex in){
-	double val = sqrt(in[0]*in[0] + in[1]*in[1]);
-	return val;
+// timing functions
+double PCFreq = 0.0;
+__int64 CounterStart = 0;
+int StartCounter()
+{
+    LARGE_INTEGER li;
+    if(!QueryPerformanceFrequency(&li))
+    printf("QueryPerformanceFrequency failed!\n");
+
+    PCFreq = ((double)li.QuadPart)/1000.0;
+
+    QueryPerformanceCounter(&li);
+    CounterStart = li.QuadPart;
+	return (int)CounterStart;
 }
 
-unsigned __stdcall myfunc(void *pArgs){
-    void **Args = (void**)pArgs;
-	//declare inputs
-	mxComplexDouble *cutout, *channels;
-	double *shifts;
-	double *cutout_pwr_ptr, cutout_pwr;
-	int *shiftPts_ptr, shiftPts, *fftlen_ptr, fftlen, *numChans_ptr, numChans, *chanLength_ptr, chanLength;
-	fftw_complex *fin, *fout;
-	//declare outputs
-	double *allproductpeaks;
-	int *allfreqlist_inds;
+int GetCounter()
+{
+    LARGE_INTEGER li;
+    QueryPerformanceCounter(&li);
+    return (int)li.QuadPart;
+}
+
+struct t_data{
+	int thread_t_ID;
 	
-    int i, j, k; // declare to simulate threads later
-	double curr_max, newmax, y_pwr;
+	mxComplexDouble *thread_cutout;
+	mxComplexDouble *thread_channels;
+	double thread_cutout_pwr;
+	double *thread_shifts;
+	int thread_shiftPts;
+	int thread_fftlen;
+	int thread_numChans;
+	int thread_chanLength;
+	
+	// IPP DFT vars
+	Ipp8u *thread_pDFTBuffer;
+	IppsDFTSpec_C_64fc *thread_pDFTSpec;
+	
+	double *thread_allproductpeaks;
+	int *thread_allfreqlist_inds;
+};
+
+// declare global thread stuff
+struct t_data t_data_array[NUM_THREADS];
+
+void cumsum(double *in, double *out, int length){
+	double value = 0;
+	for (int i = 0; i<length; i++){
+		value = value + in[i];
+		out[i] = value;
+	}
+}
+
+// double abs_fftwcomplex(fftw_complex in){
+	// double val = sqrt(in[0]*in[0] + in[1]*in[1]);
+	// return val;
+// }
+
+unsigned __stdcall xcorr_multichannel(void *pArgs){
+    struct t_data *inner_data;
+	inner_data = (struct t_data *)pArgs;
+	
+	int t_ID = inner_data->thread_t_ID;
+	
+	mxComplexDouble *cutout = inner_data->thread_cutout;
+	mxComplexDouble *channels = inner_data->thread_channels;
+	double cutout_pwr = inner_data->thread_cutout_pwr;
+	double *shifts = inner_data->thread_shifts;
+	int shiftPts = inner_data->thread_shiftPts;
+	int fftlen = inner_data->thread_fftlen;
+	int numChans = inner_data->thread_numChans;
+	int chanLength = inner_data->thread_chanLength;
+	// IPP DFT vars
+	Ipp8u *pDFTBuffer = inner_data->thread_pDFTBuffer;
+	IppsDFTSpec_C_64fc *pDFTSpec = inner_data->thread_pDFTSpec;
+	// outputs
+	double *allproductpeaks = inner_data->thread_allproductpeaks;
+	int *allfreqlist_inds = inner_data->thread_allfreqlist_inds;
+	
+    int i, k; // declare to simulate threads later
+	double maxval, y_pwr;
 	int maxind, curr_shift;
-    
-	//declare thread variables
-	double *ThreadID;
-	int t_ID;
 	
 	// new thread vars for multi-channel process
-	int chnl_startIdx;
-	Ipp64f *powerSpectrum;
-	
-	// assignments from Args passed in
-	cutout = (mxComplexDouble*)Args[0];
-	// cutout_i = (double*)Args[1];
-	channels = (mxComplexDouble*)Args[2];
-	// channels_i = (double*)Args[3];
-	numChans_ptr = (int*)Args[4];
-	numChans = (int)numChans_ptr[0];
-	chanLength_ptr = (int*)Args[5];
-	chanLength = (int)chanLength_ptr[0];
-	cutout_pwr_ptr = (double*)Args[6];
-	cutout_pwr = (double)cutout_pwr_ptr[0]; // this has same length as y, y_i
-	shifts = (double*)Args[7];
-	shiftPts_ptr = (int*)Args[8];
-	shiftPts = (int)shiftPts_ptr[0];
-	fftlen_ptr = (int*)Args[9];
-	fftlen = (int)fftlen_ptr[0]; // length of fft i.e. length of cutout
-	// fftw related
-	fin = (fftw_complex*)Args[10]; // these should be initialized as size = nThreads*fftlen
-	fout = (fftw_complex*)Args[11];
-	// outputs
-	allproductpeaks = (double*)Args[12];
-	allfreqlist_inds = (int*)Args[13];
-	
-	// now assign threadID within function
-	ThreadID = (double*)Args[14];
-    t_ID = (int)ThreadID[0];
-    // allow new threads to be assigned in mexFunction
-    WaitForThread[t_ID]=0;
+	// int chnl_startIdx;
+	Ipp64f *powerSpectrum, *power_cumu;
+	int downsamplePhase;
 
 	powerSpectrum = (Ipp64f*)ippsMalloc_64f_L(chanLength);
+	power_cumu = (Ipp64f*)ippsMalloc_64f_L(chanLength);
+	Ipp64fc *y = (Ipp64fc*)ippsMalloc_64fc_L(chanLength);
+	Ipp64fc *dft_in = (Ipp64fc*)ippsMalloc_64fc_L(fftlen);
+	Ipp64fc *dft_out = (Ipp64fc*)ippsMalloc_64fc_L(fftlen);
     
 	// pick CHANNEL based on thread number
-	for (k = t_ID; k<numChans; k = k+nThreads){
-		chnl_startIdx = k*chanLength;
+	for (k = t_ID; k<numChans; k = k+NUM_THREADS){
+		downsamplePhase = k; // the downsample phase is the same as the channel number
+		ippsSampleDown_64fc((Ipp64fc*)channels, numChans * chanLength, y, &chanLength, numChans, &downsamplePhase); // save the channel in y
+		
 		curr_shift = (int)shifts[0] - 1;
 		// calculate power spectrum for whole channel
-		ippsPowerSpectr_64fc((Ipp64fc*)&channels[chnl_startIdx], powerSpectrum, chanLength);
+		ippsPowerSpectr_64fc(y, powerSpectrum, chanLength);
+		cumsum(powerSpectrum,power_cumu,chanLength);
 		
 		// // run through all the shiftPts
 		for (i = 0; i<shiftPts; i++){
 			curr_shift = (int)shifts[i]-1;
+			if (curr_shift == 0){ y_pwr = power_cumu[fftlen-1];} // unlikely to ever happen, but whatever
+			else{ y_pwr = power_cumu[curr_shift + fftlen - 1] - power_cumu[curr_shift - 1];}
+
+			ippsMul_64fc((Ipp64fc*)cutout,(Ipp64fc*)&y[curr_shift], (Ipp64fc*)dft_in, fftlen);
 		
-			ippsSum_64f(&powerSpectrum[curr_shift], fftlen, &y_pwr);
-
-			ippsMul_64fc((Ipp64fc*)cutout,(Ipp64fc*)&channels[chnl_startIdx + curr_shift], (Ipp64fc*)&fin[fftlen*t_ID], fftlen);
-
-            fftw_execute(allplans[t_ID]);
+			ippsDFTFwd_CToC_64fc(dft_in, dft_out, pDFTSpec, pDFTBuffer);
 		
-			curr_max = abs_fftwcomplex(fout[fftlen*t_ID]); // the first value
-			maxind = 0;
-			for (j=1;j<fftlen;j++){
-				newmax = abs_fftwcomplex(fout[fftlen*t_ID+j]);
-				if (newmax>curr_max){curr_max = newmax; maxind = j;}
-			}
-
-			allproductpeaks[k*shiftPts+i] = curr_max*curr_max/cutout_pwr/y_pwr;
+			ippsPowerSpectr_64fc(dft_out, powerSpectrum, fftlen); // i don't need powerspectrum any more after getting power_cumu any more so use it to store the powerSpectrum of fft
+		
+			ippsMaxIndx_64f(powerSpectrum, fftlen, &maxval, &maxind); // it doesn't matter that powerSpectrum is longer than fftlen anyway...
+			
+			allproductpeaks[k*shiftPts+i] = maxval/cutout_pwr/y_pwr;
 			allfreqlist_inds[k*shiftPts+i] = maxind;
 		}
 	}
 	
+	ippsFree(y);
+	ippsFree(dft_in); ippsFree(dft_out);
+	ippsFree(power_cumu);
 	ippsFree(powerSpectrum);
 	_endthreadex(0);
     return 0;
@@ -115,33 +149,26 @@ unsigned __stdcall myfunc(void *pArgs){
 
 /* The gateway function */
 void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
+	ippInit();
+	// == INITIALIZE TIMING ==
+	int start_t = StartCounter();
+	int end_t;
+	// struct timespec vartime;
+	double totalTime;
+	
     // declare variables
-    int i;
 	mxComplexDouble *cutout, *channels;
     double *shifts; // direct matlab inputs are always in doubles
 	double cutout_pwr;
 	int	shiftPts, numChans, chanLength;
-	int m, fftlen;
+	int fftlen;
 	// declare outputs
 	double *allproductpeaks;
 	int *allfreqlist_inds; // declared to be int below
     
-    fftw_complex *fin;
-    fftw_complex *fout;
-    
-	clock_t start, end;
-	
 	// //reserve stuff for threads
-    double *ThreadIDList;
-    void **ThreadArgs;
-    int t, sleep; // for loops over threads
-    HANDLE *ThreadList; // handles to threads
-    ThreadIDList = (double*)mxMalloc(nThreads*sizeof(double));
-    ThreadList = (HANDLE*)mxMalloc(nThreads*sizeof(HANDLE));
-    ThreadArgs = (void**)mxMalloc(15*sizeof(void*));
-    sleep = 0;
-	//assign threadIDs
-    for(t=0;t<nThreads;t++){ThreadIDList[t] = t;}
+    int t; // for loops over threads
+    HANDLE ThreadList[NUM_THREADS]; // handles to threads
     
     /* check for proper number of arguments */
     if (nrhs!=5){
@@ -154,93 +181,99 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	cutout_pwr = mxGetScalar(prhs[3]);
 	shifts = mxGetDoubles(prhs[4]);
     
-    m = (int)mxGetM(prhs[0]);
-    fftlen = m*(int)mxGetN(prhs[0]); // this is the length of the fft, assume its only 1-D so we just take the product
+    fftlen = (int)mxGetM(prhs[0])*(int)mxGetN(prhs[0]); // this is the length of the fft, assume its only 1-D so we just take the product
 	
 	shiftPts = (int)mxGetN(prhs[4]); // this is the number of shifts there are
 	
 	/* check for proper orientation of channels */
-    if (numChans != (int)mxGetN(prhs[1])){
-        mexErrMsgTxt("numChans does not match number of columns of channels! Make sure that each channel is aligned in columns i.e. for n channels there must be n columns; probably just invoke .' at the end.");
+    if (numChans != (int)mxGetM(prhs[1])){
+        mexErrMsgTxt("numChans does not match number of rows of channels! Make sure that each channel is aligned in rows i.e. for n channels there must be n rows; probably just invoke .' at the end.");
     }
     
     /* if everything is fine, get the total channel length too */
-    chanLength = (int)mxGetM(prhs[1]);
+    chanLength = (int)mxGetN(prhs[1]);
 	
 	/* create the output matrix */
-    plhs[0] = mxCreateDoubleMatrix((mwSize)(shiftPts),(mwSize)(numChans),mxREAL);
-    plhs[1] = mxCreateNumericMatrix((mwSize)(shiftPts),(mwSize)(numChans), mxINT32_CLASS,mxREAL); //initializes to 0
+    plhs[0] = mxCreateDoubleMatrix((int)(shiftPts),(int)(numChans),mxREAL);
+    plhs[1] = mxCreateNumericMatrix((int)(shiftPts),(int)(numChans), mxINT32_CLASS,mxREAL); //initializes to 0
     
     /* get a pointer to the real data in the output matrix */
     allproductpeaks = mxGetDoubles(plhs[0]);
     allfreqlist_inds = (int*)mxGetInt32s(plhs[1]);
     
 	
-    // ====== ALLOC VARS FOR FFT IN THREADS BEFORE PLANS ====================
+	// ===== IPP DFT Allocations =====
+	start_t = GetCounter();
+	int sizeSpec = 0, sizeInit = 0, sizeBuf = 0;   
+	ippsDFTGetSize_C_64fc(fftlen, IPP_FFT_NODIV_BY_ANY, ippAlgHintNone, &sizeSpec, &sizeInit, &sizeBuf); // this just fills the 3 integers
+	/* memory allocation */
+	IppsDFTSpec_C_64fc **pSpec = (IppsDFTSpec_C_64fc**)ippMalloc(sizeof(IppsDFTSpec_C_64fc*)*NUM_THREADS);
+	Ipp8u **pBuffer = (Ipp8u**)ippMalloc(sizeof(Ipp8u*)*NUM_THREADS);
+	Ipp8u **pMemInit = (Ipp8u**)ippMalloc(sizeof(Ipp8u*)*NUM_THREADS);
+	for (t = 0; t<NUM_THREADS; t++){ // make one for each thread
+		pSpec[t] = (IppsDFTSpec_C_64fc*)ippMalloc(sizeSpec); // this is analogue of the fftw plan
+		pBuffer[t] = (Ipp8u*)ippMalloc(sizeBuf);
+		pMemInit[t] = (Ipp8u*)ippMalloc(sizeInit);
+		ippsDFTInit_C_64fc(fftlen, IPP_FFT_NODIV_BY_ANY, ippAlgHintNone,  pSpec[t], pMemInit[t]); // kinda like making the fftw plan?
+	}
+	end_t = GetCounter();
+	totalTime = (end_t - start_t)/PCFreq; // in ms
+	printf("Time to prepare IPP DFTs = %g ms \n",totalTime);
 
-    fin = fftw_alloc_complex(fftlen*nThreads);
-    fout = fftw_alloc_complex(fftlen*nThreads);
-	// ======== MAKE PLANS BEFORE COMPUTATIONS IN THREADS  ============
-	start = clock();
-    allplans[0] = fftw_plan_dft_1d(fftlen, fin, fout, FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT); // FFTW_MEASURE seems to cut execution time by ~10%, but FFTW_ESTIMATE takes ~0.001s whereas MEASURE takes ~0.375s
-    end = clock();
-    printf("Time for 1st single plan measure = %f \n",(double)(end-start)/CLOCKS_PER_SEC);
-    
-	start = clock();
-    for (i=1;i<nThreads;i++){
-        allplans[i] = fftw_plan_dft_1d(fftlen, &fin[fftlen*i], &fout[fftlen*i], FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT); // make the other plans, not executing them yet
-    }
-    end = clock();
-    printf("Time for 2nd-n'th single plan measure = %f \n",(double)(end-start)/CLOCKS_PER_SEC);
-	// ================================================================
-	// ======== ATTACH VARS TO ARGS =======================
-	ThreadArgs[0] = (void*)cutout;
-	// ThreadArgs[1] = (void*)cutout_i;
-	ThreadArgs[2] = (void*)channels;
-	// ThreadArgs[3] = (void*)channels_i;
-	ThreadArgs[4] = (void*)&numChans;
-	ThreadArgs[5] = (void*)&chanLength;
-	ThreadArgs[6] = (void*)&cutout_pwr;
-	ThreadArgs[7] = (void*)shifts;
-	ThreadArgs[8] = (void*)&shiftPts;
-	ThreadArgs[9] = (void*)&fftlen; // length of fft i.e. length of cutout
-	// fftw related
-	ThreadArgs[10] = (void*)fin;
-	ThreadArgs[11] = (void*)fout;
-	// outputs
-	ThreadArgs[12] = (void*)allproductpeaks;
-	ThreadArgs[13] = (void*)allfreqlist_inds;
-	
-	
     // =============/* call the computational routine */==============
-	ippInit();
+	GROUP_AFFINITY currentGroupAffinity, newGroupAffinity;
+	start_t = GetCounter();
     //start threads
-    for(t=0;t<nThreads;t++){
-        while (t>0 && WaitForThread[t-1]==1){sleep=sleep+1; Sleep(1); printf("Slept %i..\n",sleep);}// wait for previous threads to assign ID within function
-        ThreadArgs[14] = (void*)&ThreadIDList[t]; // assign the threadID
-        WaitForThread[t] = 1;
-        ThreadList[t] = (HANDLE)_beginthreadex(NULL,0,&myfunc,(void*)ThreadArgs,0,NULL);
-        printf("Beginning threadID %i..%i\n",(int)ThreadIDList[t],WaitForThread[t]);
+    for(t=0;t<NUM_THREADS;t++){
+		t_data_array[t].thread_t_ID = t;
+		
+		t_data_array[t].thread_cutout = cutout;
+		t_data_array[t].thread_channels = channels;
+
+		t_data_array[t].thread_cutout_pwr = cutout_pwr;
+		t_data_array[t].thread_shifts = shifts;
+		t_data_array[t].thread_shiftPts = shiftPts;
+		t_data_array[t].thread_fftlen = fftlen;
+		t_data_array[t].thread_numChans = numChans;
+		t_data_array[t].thread_chanLength = chanLength;
+			
+		// IPP DFT vars
+		t_data_array[t].thread_pDFTBuffer = pBuffer[t];
+		t_data_array[t].thread_pDFTSpec = pSpec[t];
+		
+		t_data_array[t].thread_allproductpeaks = allproductpeaks;
+		t_data_array[t].thread_allfreqlist_inds = allfreqlist_inds;
+		
+	
+        ThreadList[t] = (HANDLE)_beginthreadex(NULL,0,&xcorr_multichannel,(void*)&t_data_array[t],0,NULL);
+		GetThreadGroupAffinity(ThreadList[t], &currentGroupAffinity);
+		newGroupAffinity = currentGroupAffinity;
+		newGroupAffinity.Group = t%2;
+		SetThreadGroupAffinity(ThreadList[t], &newGroupAffinity, NULL);
+		GetThreadGroupAffinity(ThreadList[t], &currentGroupAffinity);
+        printf("Beginning threadID %i..\n",t_data_array[t].thread_t_ID);
     }
     
-    WaitForMultipleObjects(nThreads,ThreadList,1,INFINITE);
-	
+    WaitForMultipleObjects(NUM_THREADS,ThreadList,1,INFINITE);
 	
 	// ============== CLEANUP =================
     // close threads
     printf("Closing threads...\n");
-    for(t=0;t<nThreads;t++){
+    for(t=0;t<NUM_THREADS;t++){
         CloseHandle(ThreadList[t]);
 //         printf("Closing threadID %i.. %i\n",(int)ThreadIDList[t],WaitForThread[t]);
     }
     printf("All threads closed! \n");
-
-    for (i=0;i<nThreads;i++){fftw_destroy_plan(allplans[i]);}
-
-    fftw_free(fin);
-    fftw_free(fout);
+	end_t = GetCounter();
+	totalTime = (end_t - start_t)/PCFreq; // in ms
+	printf("Time for threads to finish = %g ms \n",totalTime);
 	
-	mxFree(ThreadIDList);
-    mxFree(ThreadList);
-    mxFree(ThreadArgs);
+	for (t=0; t<NUM_THREADS; t++){
+		ippFree(pSpec[t]);
+		ippFree(pBuffer[t]);
+		ippFree(pMemInit[t]);
+	}
+	ippFree(pSpec);
+	ippFree(pBuffer);
+	ippFree(pMemInit);
 }

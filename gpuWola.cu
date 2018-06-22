@@ -27,6 +27,29 @@
 
 #define NUM_THREADS 12
 
+// timing functions
+double PCFreq = 0.0;
+__int64 CounterStart = 0;
+int StartCounter()
+{
+    LARGE_INTEGER li;
+    if(!QueryPerformanceFrequency(&li))
+    printf("QueryPerformanceFrequency failed!\n");
+
+    PCFreq = ((double)li.QuadPart)/1000.0;
+
+    QueryPerformanceCounter(&li);
+    CounterStart = li.QuadPart;
+	return (int)CounterStart;
+}
+
+int GetCounter()
+{
+    LARGE_INTEGER li;
+    QueryPerformanceCounter(&li);
+    return (int)li.QuadPart;
+}
+
 // definition of thread data
 struct thread_data{
 	int thread_t_ID;
@@ -214,6 +237,12 @@ unsigned __stdcall threaded_wola(void *pArgs){
 /* The gateway function */
 void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
     ippInit();
+	// == INITIALIZE TIMING ==
+	int start_t = StartCounter();
+	int end_t;
+	// struct timespec vartime;
+	double totalTime;
+	
     size_t free_byte ; // these are for gpu checks
 	size_t total_byte ;
     cudaMemGetInfo( &free_byte, &total_byte );
@@ -311,6 +340,7 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	printf("i haven't crashed after allocating streams on stack and some nprime arrays\n");
     
     // we do ALL the initial copies first, so that we don't invoke invoke async copies later on in the threads
+	start_t = GetCounter();
 	for (t=0;t<NUM_THREADS;t++){
 		nprime_startIdx[t] = nprime_total/NUM_THREADS * t;
 		n_start[t] = nprime_startIdx[t] * Dec;
@@ -334,8 +364,12 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 		if (allplans[t] == NULL){ printf("FFTW PLAN FAILED FOR THREAD %i \n", t);} // this is also fine..
 		
 	}
+	end_t = GetCounter();
+	totalTime = (end_t - start_t)/PCFreq; // in ms
+	printf("Time for initial copies/stream/plan creation = %g ms \n",totalTime);
     
     // start threads
+	start_t = GetCounter();
 	for (t=0; t<NUM_THREADS; t++){
 		thread_data_array[t].thread_t_ID = t;
 		thread_data_array[t].thread_L = L;
@@ -380,6 +414,9 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	//         printf("Closing threadID %i.. %i\n",(int)ThreadIDList[t],WaitForThread[t]);
 	}
 	printf("All threads closed! \n");
+	end_t = GetCounter();
+	totalTime = (end_t - start_t)/PCFreq; // in ms
+	printf("Time for threads to finish = %g ms \n",totalTime);
 	// =====================================
 
     for (t=0;t<NUM_THREADS;t++){
