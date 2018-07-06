@@ -21,66 +21,63 @@
 #include <windows.h>
 #include <process.h>
 
-static volatile int WaitForThread[24];
-const int nThreads = 24;
+#define NUM_THREADS 24
+
+// definition of thread data
+struct thread_data{
+	int thread_t_ID;
+	
+	mxComplexDouble *thread_y;
+	double *thread_f_tap;
+	int thread_L;
+	int thread_N;
+	int thread_Dec;
+	int thread_nprimePts;
+	
+	fftw_complex *thread_fin;
+	fftw_complex *thread_fout;
+
+	mxComplexDouble *thread_out; // for R2018
+};
+
+// declare global thread stuff
+struct thread_data thread_data_array[NUM_THREADS];
+
 // test fftw_plans array on stack for threads, works
-fftw_plan allplans[24]; // REMEMBER TO CHECK FFTW PLANS CREATION IN THE ENTRY FUNCTION
+fftw_plan allplans[NUM_THREADS]; // REMEMBER TO CHECK FFTW PLANS CREATION IN THE ENTRY FUNCTION
 
-unsigned __stdcall myfunc(void *pArgs){
-    void **Args = (void**)pArgs;
-	//declare inputs
-	mxComplexDouble *y;
-    double *f_tap;
-	int *nprimePts_ptr, nprimePts, *N_ptr, N; // rename fftlen to N
-    int *Dec_ptr, Dec, *L_ptr, L;
-	fftw_complex *fin, *fout;
-	//declare outputs
-    mxComplexDouble tempout; // put on stack first?
-	mxComplexDouble *out;
+unsigned __stdcall threaded_wola(void *pArgs){
+    struct thread_data *inner_data;
+	inner_data = (struct thread_data *)pArgs;
+	
+	int t_ID = inner_data->thread_t_ID;
+	mxComplexDouble *y = inner_data->thread_y;
+	int L = inner_data->thread_L;
+	int N = inner_data->thread_N;
+	int Dec = inner_data->thread_Dec;
+	int nprimePts = inner_data->thread_nprimePts;
+	double *f_tap = inner_data->thread_f_tap;
 
-	//declare thread variables
-	double *ThreadID;
-	int t_ID;
+	fftw_complex *fin = inner_data->thread_fin;
+	fftw_complex *fout = inner_data->thread_fout;
+
+	mxComplexDouble *out = inner_data->thread_out; // for R2018
+	// end of assignments
     
-    int nprime, n, a, b, offset; // declare to simulate threads later
+    int nprime, n, a, b; // declare to simulate threads later
     int k;
-	
-	// assignments from Args passed in
-    y = (mxComplexDouble*)Args[0];
-    f_tap = (double*)Args[1];
-    N_ptr = (int*)Args[2];
-    N = N_ptr[0]; // length of fft
-    Dec_ptr = (int*)Args[3];
-    Dec = Dec_ptr[0];
-    L_ptr = (int*)Args[4]; 
-    L = L_ptr[0]; // no. of filter taps
-    nprimePts_ptr = (int*)Args[5];
-    nprimePts = nprimePts_ptr[0];
-    
-	// fftw related
-	fin = (fftw_complex*)Args[6]; // these should be initialized as size = nThreads*fftlen
-	fout = (fftw_complex*)Args[7];
-	// outputs
-    out = (mxComplexDouble*)Args[8];
-	
-	// now assign threadID within function
-	ThreadID = (double*)Args[9];
-    t_ID = (int)ThreadID[0];
-    // allow new threads to be assigned in mexFunction
-    WaitForThread[t_ID]=0;
 
 	// pick point based on thread number
-    offset = t_ID * N; // used to only fill the part of the fftw_complex used for this thread
 
-	for (nprime = t_ID; nprime<nprimePts; nprime=nprime+nThreads){
+	for (nprime = t_ID; nprime<nprimePts; nprime=nprime+NUM_THREADS){
         n = nprime*Dec;
         for (a = 0; a<N; a++){
-            fin[a + offset][0] = 0; // init to 0
-            fin[a + offset][1] = 0;
+            fin[a][0] = 0; // init to 0
+            fin[a][1] = 0;
             for (b = 0; b<L/N; b++){
                 if (n - (b*N+a) >= 0){
-                    fin[a + offset][0] = fin[a + offset][0] + y[n-(b*N+a)].real * f_tap[b*N+a];
-                    fin[a + offset][1] = fin[a + offset][1] + y[n-(b*N+a)].imag * f_tap[b*N+a];
+                    fin[a][0] = fin[a][0] + y[n-(b*N+a)].real * f_tap[b*N+a];
+                    fin[a][1] = fin[a][1] + y[n-(b*N+a)].imag * f_tap[b*N+a];
                 } // fin is fftw_complex
             }
         }
@@ -88,12 +85,12 @@ unsigned __stdcall myfunc(void *pArgs){
         
 		if (Dec*2 == N && nprime % 2 != 0){ // only if using overlapping channels, do some phase corrections when nprime is odd
 			for (k=1; k<N; k=k+2){ //  all even k are definitely even in the product anyway
-				fout[offset + k][0] = -fout[offset + k][0];
-				fout[offset + k][1] = -fout[offset + k][1];
+				fout[k][0] = -fout[k][0];
+				fout[k][1] = -fout[k][1];
 			}
 		}
 		
-        memcpy(&out[nprime*N],&fout[t_ID*N],sizeof(mxComplexDouble)*N);
+        memcpy(&out[nprime*N],fout,sizeof(mxComplexDouble)*N);
 	}
 	
 	_endthreadex(0);
@@ -117,17 +114,10 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
     fftw_complex *fout;
 	
 	// //reserve stuff for threads
-	GROUP_AFFINITY currentGroupAffinity, newGroupAffinity;
-    double *ThreadIDList;
-    void **ThreadArgs;
-    int t, sleep; // for loops over threads
-    HANDLE *ThreadList; // handles to threads
-    ThreadIDList = (double*)mxMalloc(nThreads*sizeof(double));
-    ThreadList = (HANDLE*)mxMalloc(nThreads*sizeof(HANDLE));
-    ThreadArgs = (void**)mxMalloc(10*sizeof(void*));
-    sleep = 0;
-	//assign threadIDs
-    for(t=0;t<nThreads;t++){ThreadIDList[t] = t;}
+	// GROUP_AFFINITY currentGroupAffinity, newGroupAffinity;
+
+    int t; // for loops over threads
+    HANDLE ThreadList[NUM_THREADS]; // handles to threads
     
     /* check for proper number of arguments */
     if (nrhs!=4){
@@ -166,8 +156,8 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
     
     // ====== ALLOC VARS FOR FFT IN THREADS BEFORE PLANS ====================
 
-    fin = fftw_alloc_complex(fftlen*nThreads);
-    fout = fftw_alloc_complex(fftlen*nThreads);
+    fin = fftw_alloc_complex(fftlen*NUM_THREADS);
+    fout = fftw_alloc_complex(fftlen*NUM_THREADS);
 	// ======== MAKE PLANS BEFORE COMPUTATIONS IN THREADS  ============
 	start = clock();
     allplans[0] = fftw_plan_dft_1d((int)fftlen, fin, fout, FFTW_BACKWARD, FFTW_ESTIMATE); // FFTW_MEASURE seems to cut execution time by ~10%, but FFTW_ESTIMATE takes ~0.001s whereas MEASURE takes ~0.375s
@@ -175,64 +165,47 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
     printf("Time for 1st single plan measure = %f \n",(double)(end-start)/CLOCKS_PER_SEC);
     
 	start = clock();
-    for (i=1;i<nThreads;i++){
+    for (i=1;i<NUM_THREADS;i++){
         allplans[i] = fftw_plan_dft_1d((int)fftlen, &fin[fftlen*i], &fout[fftlen*i], FFTW_BACKWARD, FFTW_ESTIMATE); // make the other plans, not executing them yet
     }
     end = clock();
     printf("Time for 2nd-n'th single plan measure = %f \n",(double)(end-start)/CLOCKS_PER_SEC);
 	// ================================================================
-	// ======== ATTACH VARS TO ARGS =======================
-    ThreadArgs[0] = (void*)y;
-    ThreadArgs[1] = (void*)f_tap;
-    ThreadArgs[2] = (void*)&fftlen;
-    ThreadArgs[3] = (void*)&Dec;
-    ThreadArgs[4] = (void*)&L;
-    ThreadArgs[5] = (void*)&nprimePts;
-	// fftw related
-	ThreadArgs[6] = (void*)fin;
-	ThreadArgs[7] = (void*)fout;
-	// outputs
-	ThreadArgs[8] = (void*)out;
-	
-	
-    // =============/* call the computational routine */==============
-    //start threads
-    for(t=0;t<nThreads;t++){
-        while (t>0 && WaitForThread[t-1]==1){sleep=sleep+1; Sleep(1); printf("Slept %i..\n",sleep);}// wait for previous threads to assign ID within function
-        ThreadArgs[9] = (void*)&ThreadIDList[t]; // assign the threadID
-        WaitForThread[t] = 1;
-        ThreadList[t] = (HANDLE)_beginthreadex(NULL,0,&myfunc,(void*)ThreadArgs,0,NULL);
-        printf("Beginning threadID %i..%i\n",(int)ThreadIDList[t],WaitForThread[t]);
+	for (t=0; t<NUM_THREADS; t++){
+		thread_data_array[t].thread_t_ID = t;
 		
-        // for dual processors... but seems slower?
-		GetThreadGroupAffinity(ThreadList[t], &currentGroupAffinity);
-		printf("Beginning thread %i, has group affinity %i by default \n", (int)ThreadIDList[t], (int)currentGroupAffinity.Group);
+		thread_data_array[t].thread_f_tap = f_tap;
+		thread_data_array[t].thread_L = L;
+		thread_data_array[t].thread_N = fftlen;
+		thread_data_array[t].thread_Dec = Dec;
+		thread_data_array[t].thread_nprimePts = nprimePts;
+		thread_data_array[t].thread_y = y;
+		
+		thread_data_array[t].thread_fin = &fin[t*fftlen];
+		thread_data_array[t].thread_fout = &fout[t*fftlen];
 
-		newGroupAffinity = currentGroupAffinity;
-		newGroupAffinity.Group = t%2;
-		SetThreadGroupAffinity(ThreadList[t], &newGroupAffinity, NULL);
-		GetThreadGroupAffinity(ThreadList[t], &currentGroupAffinity);
-		printf("SET: Thread %i has group affinity %i  \n", (int)ThreadIDList[t], (int)currentGroupAffinity.Group);
-    }
+		thread_data_array[t].thread_out = out; // for R2018
+		
+        // pthread_create(&ThreadList[t], &attr, threaded_wola, (void *)&thread_data_array[t]);
+		ThreadList[t] = (HANDLE)_beginthreadex(NULL,0,&threaded_wola,(void*)&thread_data_array[t],0,NULL);
+
+        printf("Beginning threadID %i..\n",thread_data_array[t].thread_t_ID);
+	}
     
-    WaitForMultipleObjects(nThreads,ThreadList,1,INFINITE);
+    WaitForMultipleObjects(NUM_THREADS,ThreadList,1,INFINITE);
 
 	// ============== CLEANUP =================
     // close threads
     printf("Closing threads...\n");
-    for(t=0;t<nThreads;t++){
+    for(t=0;t<NUM_THREADS;t++){
         CloseHandle(ThreadList[t]);
 //         printf("Closing threadID %i.. %i\n",(int)ThreadIDList[t],WaitForThread[t]);
     }
     printf("All threads closed! \n");
 
-    for (i=0;i<nThreads;i++){fftw_destroy_plan(allplans[i]);}
+    for (i=0;i<NUM_THREADS;i++){fftw_destroy_plan(allplans[i]);}
 
     fftw_free(fin);
     fftw_free(fout);
-   
-	mxFree(ThreadIDList);
-    mxFree(ThreadList);
-    mxFree(ThreadArgs);
 
 }
