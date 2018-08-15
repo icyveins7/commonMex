@@ -26,6 +26,7 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
     // declare variables
 	double freq, fs;
 	int len;
+	int i;
 
 	// declare outputs
 	double *out_r, *out_i;
@@ -39,6 +40,10 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
     freq = (double)mxGetScalar(prhs[1]);
     fs = (double)mxGetScalar(prhs[2]);
 	
+	if (fabs(freq)>=0.5*fs){
+		mexErrMsgTxt("Please limit freqOffset to +/- 0.5*fs \n");
+	}
+	
 	/* create the output matrix ===== TEST WITH COMPLEX DATA*/
     plhs[0] = mxCreateDoubleMatrix((mwSize)1,(mwSize)(len),mxCOMPLEX);
     /* get a pointer to the real data in the output matrix */
@@ -49,13 +54,16 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	double phase = 0;
 	double sin_phase = IPP_2PI - IPP_PI2; // i.e. 3pi/2, see ippbase.h for definitions
 	
-	if (freq>0){
+	if (freq>=0){
 		ippsTone_64f(out_r, len, 1.0, freq/fs, &phase, ippAlgHintAccurate);
 		ippsTone_64f(out_i, len, 1.0, freq/fs, &sin_phase, ippAlgHintAccurate);
 	}
 	else{
-		ippsTone_64f(out_r, len, 1.0, (fs-freq)/fs, &phase, ippAlgHintAccurate);
-		ippsTone_64f(out_i, len, 1.0, (fs-freq)/fs, &sin_phase, ippAlgHintAccurate);
+		ippsTone_64f(out_r, len, 1.0, (-freq)/fs, &phase, ippAlgHintAccurate);
+		ippsTone_64f(out_i, len, 1.0, (-freq)/fs, &sin_phase, ippAlgHintAccurate);
+		for (i = 0; i<len; i++){
+			out_i[i] = -out_i[i]; // sin is an odd function
+		}
 	}
 	
 }
