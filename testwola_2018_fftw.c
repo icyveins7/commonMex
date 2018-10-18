@@ -15,8 +15,7 @@
 #include <math.h>
 #include "stdio.h"
 #include <stdlib.h>
-// #include "fftw3.h"
-#include "ipp.h"
+#include "fftw3.h"
 #include <time.h>
 #include <string.h>
 #include <windows.h>
@@ -35,9 +34,8 @@ struct thread_data{
 	int thread_Dec;
 	int thread_nprimePts;
 	
-	// IPP DFT vars
-	Ipp8u *thread_pDFTBuffer;
-	IppsDFTSpec_C_64fc *thread_pDFTSpec;
+	fftw_complex *thread_fin;
+	fftw_complex *thread_fout;
 
 	mxComplexDouble *thread_out; // for R2018
 };
@@ -45,6 +43,8 @@ struct thread_data{
 // declare global thread stuff
 struct thread_data thread_data_array[NUM_THREADS];
 
+// test fftw_plans array on stack for threads, works
+fftw_plan allplans[NUM_THREADS]; // REMEMBER TO CHECK FFTW PLANS CREATION IN THE ENTRY FUNCTION
 
 unsigned __stdcall threaded_wola(void *pArgs){
     struct thread_data *inner_data;
@@ -58,51 +58,39 @@ unsigned __stdcall threaded_wola(void *pArgs){
 	int nprimePts = inner_data->thread_nprimePts;
 	double *f_tap = inner_data->thread_f_tap;
 
-	// IPP DFT vars
-	Ipp8u *pDFTBuffer = inner_data->thread_pDFTBuffer;
-	IppsDFTSpec_C_64fc *pDFTSpec = inner_data->thread_pDFTSpec;
+	fftw_complex *fin = inner_data->thread_fin;
+	fftw_complex *fout = inner_data->thread_fout;
 
 	mxComplexDouble *out = inner_data->thread_out; // for R2018
 	// end of assignments
     
     int nprime, n, a, b; // declare to simulate threads later
     int k;
-	
-	// allocate for FFTs
-	Ipp64fc *dft_in = (Ipp64fc*)ippsMalloc_64fc_L(N);
-	Ipp64fc *dft_out = (Ipp64fc*)ippsMalloc_64fc_L(N);
 
 	// pick point based on thread number
 
 	for (nprime = t_ID; nprime<nprimePts; nprime=nprime+NUM_THREADS){
         n = nprime*Dec;
-		
-		ippsZero_64fc(dft_in, N);
-		
         for (a = 0; a<N; a++){
+            fin[a][0] = 0; // init to 0
+            fin[a][1] = 0;
             for (b = 0; b<L/N; b++){
                 if (n - (b*N+a) >= 0){
-					dft_in[a].re = dft_in[a].re + y[n-(b*N+a)].real * f_tap[b*N+a];
-					dft_in[a].im = dft_in[a].im + y[n-(b*N+a)].imag * f_tap[b*N+a];
-                } 
+                    fin[a][0] = fin[a][0] + y[n-(b*N+a)].real * f_tap[b*N+a];
+                    fin[a][1] = fin[a][1] + y[n-(b*N+a)].imag * f_tap[b*N+a];
+                } // fin is fftw_complex
             }
         }
-		
-		// ippsDFTInv_CToC_64fc(dft_in, dft_out, pDFTSpec, pDFTBuffer); // actually you can write directly to the matlab output in r2018 since it's interleaved
-		ippsDFTInv_CToC_64fc(dft_in, (Ipp64fc*)&out[nprime*N], pDFTSpec, pDFTBuffer);
-		
-        // fftw_execute(allplans[t_ID]); // this should place them into another fftw_complex fout
+        fftw_execute(allplans[t_ID]); // this should place them into another fftw_complex fout
         
 		if (Dec*2 == N && nprime % 2 != 0){ // only if using overlapping channels, do some phase corrections when nprime is odd
 			for (k=1; k<N; k=k+2){ //  all even k are definitely even in the product anyway
-				// dft_out[k].real = -dft_out[k].real;
-				// dft_out[k].imag = -dft_out[k].imag; // actually you can write directly to the matlab output in r2018 since it's interleaved
-				out[nprime*N + k].real = -out[nprime*N + k].real;
-				out[nprime*N + k].imag = -out[nprime*N + k].imag;
+				fout[k][0] = -fout[k][0];
+				fout[k][1] = -fout[k][1];
 			}
 		}
 		
-        // memcpy(&out[nprime*N],fout,sizeof(mxComplexDouble)*N); // if you write directly, you won't need to copy it
+        memcpy(&out[nprime*N],fout,sizeof(mxComplexDouble)*N);
 	}
 	
 	_endthreadex(0);
@@ -121,6 +109,9 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	mxComplexDouble *out;
     
 	clock_t start, end;
+    // for fftw stuff
+    fftw_complex *fin;
+    fftw_complex *fout;
 	
 	// //reserve stuff for threads
 	// GROUP_AFFINITY currentGroupAffinity, newGroupAffinity;
@@ -164,20 +155,21 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
     out = mxGetComplexDoubles(plhs[0]);
     
     // ====== ALLOC VARS FOR FFT IN THREADS BEFORE PLANS ====================
-	// ===== IPP DFT Allocations =====
 
-	int sizeSpec = 0, sizeInit = 0, sizeBuf = 0;   
-	ippsDFTGetSize_C_64fc(fftlen, IPP_FFT_NODIV_BY_ANY, ippAlgHintNone, &sizeSpec, &sizeInit, &sizeBuf); // this just fills the 3 integers
-	/* memory allocation */
-	IppsDFTSpec_C_64fc **pDFTSpec = (IppsDFTSpec_C_64fc**)ippMalloc(sizeof(IppsDFTSpec_C_64fc*)*NUM_THREADS);
-	Ipp8u **pDFTBuffer = (Ipp8u**)ippMalloc(sizeof(Ipp8u*)*NUM_THREADS);
-	Ipp8u **pDFTMemInit = (Ipp8u**)ippMalloc(sizeof(Ipp8u*)*NUM_THREADS);
-	for (t = 0; t<NUM_THREADS; t++){ // make one for each thread
-		pDFTSpec[t] = (IppsDFTSpec_C_64fc*)ippMalloc(sizeSpec); // this is analogue of the fftw plan
-		pDFTBuffer[t] = (Ipp8u*)ippMalloc(sizeBuf);
-		pDFTMemInit[t] = (Ipp8u*)ippMalloc(sizeInit);
-		ippsDFTInit_C_64fc(fftlen, IPP_FFT_NODIV_BY_ANY, ippAlgHintNone,  pDFTSpec[t], pDFTMemInit[t]); // kinda like making the fftw plan?
-	}
+    fin = fftw_alloc_complex(fftlen*NUM_THREADS);
+    fout = fftw_alloc_complex(fftlen*NUM_THREADS);
+	// ======== MAKE PLANS BEFORE COMPUTATIONS IN THREADS  ============
+	start = clock();
+    allplans[0] = fftw_plan_dft_1d((int)fftlen, fin, fout, FFTW_BACKWARD, FFTW_ESTIMATE); // FFTW_MEASURE seems to cut execution time by ~10%, but FFTW_ESTIMATE takes ~0.001s whereas MEASURE takes ~0.375s
+    end = clock();
+    printf("Time for 1st single plan measure = %f \n",(double)(end-start)/CLOCKS_PER_SEC);
+    
+	start = clock();
+    for (i=1;i<NUM_THREADS;i++){
+        allplans[i] = fftw_plan_dft_1d((int)fftlen, &fin[fftlen*i], &fout[fftlen*i], FFTW_BACKWARD, FFTW_ESTIMATE); // make the other plans, not executing them yet
+    }
+    end = clock();
+    printf("Time for 2nd-n'th single plan measure = %f \n",(double)(end-start)/CLOCKS_PER_SEC);
 	// ================================================================
 	for (t=0; t<NUM_THREADS; t++){
 		thread_data_array[t].thread_t_ID = t;
@@ -189,8 +181,8 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 		thread_data_array[t].thread_nprimePts = nprimePts;
 		thread_data_array[t].thread_y = y;
 		
-		thread_data_array[t].thread_pDFTBuffer = pDFTBuffer[t];
-		thread_data_array[t].thread_pDFTSpec = pDFTSpec[t];
+		thread_data_array[t].thread_fin = &fin[t*fftlen];
+		thread_data_array[t].thread_fout = &fout[t*fftlen];
 
 		thread_data_array[t].thread_out = out; // for R2018
 		
@@ -211,14 +203,9 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
     }
     printf("All threads closed! \n");
 
-	// === FINAL CLEANUP ===
-	for (t=0; t<NUM_THREADS; t++){
-		ippFree(pDFTSpec[t]);
-		ippFree(pDFTBuffer[t]);
-		ippFree(pDFTMemInit[t]);
-	}
-	ippFree(pDFTSpec);
-	ippFree(pDFTBuffer);
-	ippFree(pDFTMemInit);
+    for (i=0;i<NUM_THREADS;i++){fftw_destroy_plan(allplans[i]);}
+
+    fftw_free(fin);
+    fftw_free(fout);
 
 }
