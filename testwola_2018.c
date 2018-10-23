@@ -15,7 +15,6 @@
 #include <math.h>
 #include "stdio.h"
 #include <stdlib.h>
-// #include "fftw3.h"
 #include "ipp.h"
 #include <time.h>
 #include <string.h>

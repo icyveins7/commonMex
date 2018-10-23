@@ -8,7 +8,7 @@
 #include <windows.h>
 #include <tchar.h>
 #define BUFSIZE MAX_PATH
-#define MAX_DIR 4096
+#define MAX_DIR 1048576
 
 int main(int argc, char* argv[]){
 	
