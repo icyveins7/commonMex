@@ -22,8 +22,9 @@ int main(int argc, char* argv[]){
 	int storedBufferLen;
 	int expectedFileSizeBytes;
 	int ensureEarliestFlag;
+	int copyInsteadOfMove;
 	
-	if (argc == 6){
+	if (argc == 7){
 
 		sourcedirpathlen = snprintf(sourcedirpath, BUFSIZE, "%s", argv[1]);
 		printf("Set sourcedir to %s \n",&sourcedirpath[0]);
@@ -39,9 +40,12 @@ int main(int argc, char* argv[]){
 
 		sscanf (argv[5], "%d", &ensureEarliestFlag);
 		printf("Set ensureEarliestFlag to %i \n", ensureEarliestFlag);
+		
+		sscanf (argv[6], "%d", &copyInsteadOfMove);
+		printf("Set copyInsteadOfMove to %i \n", copyInsteadOfMove);
 	}
 	else {
-		printf("Arguments are (sourcedirpath) (targetdirpath) (storedBufferLen) (expectedFileSizeBytes) (ensureEarliestFlag) \n");
+		printf("Arguments are (sourcedirpath) (targetdirpath) (storedBufferLen) (expectedFileSizeBytes) (ensureEarliestFlag) (copyInsteadOfMove) \n");
 		return 1;
 	}
 	
@@ -57,6 +61,8 @@ int main(int argc, char* argv[]){
 	FILE *fp;
 	long fileBytes;
 	char singlefilename[BUFSIZE];
+	
+	BOOL failIfExists = FALSE;
 	
 	if (ensureEarliestFlag == 0) { // remove checks
 		while (1) {
@@ -77,7 +83,12 @@ int main(int argc, char* argv[]){
 						printf("First file is %s \n", filepath);
 						snprintf(targetfilepath, BUFSIZE, "%s%s", targetdirpath, singlefilename);
 						printf("Moving file to %s \n", targetfilepath);
-						MoveFile(filepath, targetfilepath);
+						if (copyInsteadOfMove){
+							CopyFile(filepath, targetfilepath, failIfExists);
+						}
+						else{
+							MoveFile(filepath, targetfilepath);
+						}
 					}
 				}
 			}
@@ -161,8 +172,15 @@ int main(int argc, char* argv[]){
 				snprintf(filepath, BUFSIZE, "%s%s", sourcedirpath, &dirfilenames[minIdx*BUFSIZE]);
 				printf("Earliest file is %s \n", filepath);
 				snprintf(targetfilepath, BUFSIZE, "%s%s", targetdirpath, &dirfilenames[minIdx*BUFSIZE]);
-				printf("Moving file to %s \n", targetfilepath);
-				MoveFile(filepath, targetfilepath);
+				
+				if (copyInsteadOfMove){
+					printf("Copying file to %s \n", targetfilepath);
+					CopyFile(filepath, targetfilepath, failIfExists);
+				}
+				else{
+					printf("Moving file to %s \n", targetfilepath);
+					MoveFile(filepath, targetfilepath);
+				}
 			}
 			else {
 				printf("Nothing to move! \n");
