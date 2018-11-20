@@ -13,7 +13,6 @@
 #pragma comment (lib, "Mswsock.lib")
 #pragma comment (lib, "AdvApi32.lib")
 
-
 #define DEFAULT_BUFLEN 512
 #define DEFAULT_PORT "27015"
 
@@ -33,15 +32,21 @@ int __cdecl main(int argc, char **argv)
                     hints;
     // char *sendbuf = "this is a test";
 	struct packet_contents packet0;
-	packet0.dataType = 1;
+	packet0.dataType = 0;
 	packet0.channelNumber = htonl(536);
 	packet0.startTime = htonl(1541036538);
+	printf("host byte order = %u, network byte order = %u \n", 1541036538, htonl(1541036538));
 	packet0.endTime = htonl(1541036558);
 	char sendbuf1[DEFAULT_BUFLEN];
 	memcpy(sendbuf1, &packet0, sizeof(struct packet_contents));
 	
-	
+	struct packet_contents packet1;
+	packet1.dataType = 1;
+	packet1.channelNumber = 532;
+	packet1.startTime = 1541011890;
+	packet1.endTime = 1541011900;
 	char sendbuf2[DEFAULT_BUFLEN];
+	memcpy(sendbuf2, &packet1, sizeof(struct packet_contents));
 	
     char recvbuf[DEFAULT_BUFLEN];
     int iResult;
@@ -103,10 +108,15 @@ int __cdecl main(int argc, char **argv)
         return 1;
     }
 
-	for (int ii = 0; ii < 3; ii++){
+	for (int ii = 1; ii < 2; ii++){
 		// Send an initial buffer
 		// iResult = send( ConnectSocket, sendbuf, (int)strlen(sendbuf), 0 );
-		iResult = send( ConnectSocket, sendbuf1, sizeof(struct packet_contents), 0); // let's test with 5 bytes first
+		if (ii%2==0){
+			iResult = send( ConnectSocket, sendbuf1, sizeof(struct packet_contents), 0); // let's test with 5 bytes first
+		}
+		else{
+			iResult = send( ConnectSocket, sendbuf2, sizeof(struct packet_contents), 0);
+		}
 		if (iResult == SOCKET_ERROR) {
 			printf("send failed with error: %d\n", WSAGetLastError());
 			closesocket(ConnectSocket);

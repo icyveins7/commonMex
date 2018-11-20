@@ -10,9 +10,20 @@
 #include <stdio.h>
 #include <stdint.h>
 
+#include <zip.h>
+
+#include <tchar.h>
+#include <Shlwapi.h>
+
+#pragma comment(lib, "User32.lib")
+#pragma comment(lib, "Shlwapi.lib")
+
 // Need to link with Ws2_32.lib
 #pragma comment (lib, "Ws2_32.lib")
 // #pragma comment (lib, "Mswsock.lib")
+
+#define SAMP_RATE 5000 // change all these next time
+#define MAX_FILES 128
 
 #define DEFAULT_BUFLEN 512
 #define DEFAULT_PORT "27015"
@@ -23,6 +34,71 @@ struct packet_contents{
 	uint32_t startTime;
 	uint32_t endTime;
 };
+
+void makeDataPaths(char *mainDirectoryPath, char *altDirectoryPath, uint32_t startTime, uint32_t endTime, char *allfilepaths){
+	uint32_t totalTime = endTime - startTime + 1;
+
+	for (int i = 0; i<totalTime; i++){
+		snprintf(&allfilepaths[i*3*MAX_PATH + 0 * MAX_PATH], MAX_PATH, "%s%u_channel.bin", mainDirectoryPath, startTime + (uint32_t)i);
+		snprintf(&allfilepaths[i*3*MAX_PATH + 1 * MAX_PATH], MAX_PATH, "%s%u_allproductpeaks.bin", mainDirectoryPath, startTime + (uint32_t)i);
+		snprintf(&allfilepaths[i*3*MAX_PATH + 2 * MAX_PATH], MAX_PATH, "%s%u_allfreqlistinds.bin", mainDirectoryPath, startTime + (uint32_t)i);
+	
+		printf("%s\n%s\n%s\n\n", &allfilepaths[i*3*MAX_PATH + 0 * MAX_PATH], &allfilepaths[i*3*MAX_PATH + 1 * MAX_PATH], &allfilepaths[i*3*MAX_PATH + 2 * MAX_PATH]);
+	}
+	
+}
+
+int zipFileList(char *filepaths, int len){
+	long int firstNumber, lastNumber;
+	int *errorp = NULL;
+	zip_error_t *errorz = NULL;
+	
+	char filename[MAX_PATH];
+	char endptr[MAX_PATH];
+	
+	zip_uint64_t zipfileIdx = 0;
+	//zip_stat_t stat;
+	
+	strcpy(filename, filepaths); // get the first file time
+	PathStripPathA(filename);
+	firstNumber = strtol(filename, (char**)&endptr, 10);
+	strcpy(filename, &filepaths[(len-1)*MAX_PATH]); // get the last file time
+	PathStripPathA(filename);
+	lastNumber = strtol(filename, (char**)&endptr, 10);
+	
+	char zipfilename[MAX_PATH];
+	snprintf(zipfilename,MAX_PATH,"testing.zip");
+	printf("Zipfilename is %s \n", zipfilename);
+	
+	zip_t *zipfile = zip_open(zipfilename, ZIP_CREATE, errorp);
+	zip_source_t *zipsource;
+	
+	if (errorp == NULL){
+		printf("Opened zip file for writing!\n");
+
+		for (int i = 0; i<len; i++){
+			strcpy(filename, &filepaths[i*MAX_PATH]);
+			PathStripPathA(filename);
+			printf("After stripping path from %s, filename is %s \n", &filepaths[i*MAX_PATH], filename);
+			
+			if((zipsource=zip_source_file_create(&filepaths[i*MAX_PATH], 0, -1, errorz)) == NULL || (zipfileIdx = zip_file_add(zipfile, filename, zipsource, ZIP_FL_OVERWRITE)) < 0){
+				zip_source_free(zipsource);
+				printf("Failed to add %s to zip! \n", filename);
+			}
+			else{
+				zip_set_file_compression(zipfile, zipfileIdx, ZIP_CM_STORE, 1); // 1 to 9, 1 being fastest, ZIP_CM_DEFAULT, ZIP_CM_STORE
+				printf("Set file compression to fastest!\n");
+			}
+		}
+	}
+	
+	if (zip_close(zipfile) < 0){
+		zip_discard(zipfile);
+		printf("Failed to write zip file to disk! \n");
+	}
+
+	return 0;
+}
 
 int __cdecl main(void) 
 {
@@ -38,7 +114,16 @@ int __cdecl main(void)
     int iSendResult;
     char recvbuf[DEFAULT_BUFLEN];
     int recvbuflen = DEFAULT_BUFLEN;
+	
+	// prep to make the filepaths
+	char *longsendbuf = (char*)malloc(sizeof(int32_t)*MAX_FILES*SAMP_RATE*3); // there's going to be 2 for the complex data, 0.5 each for prodpeaks/freqlist_inds, since it's at half samp_rate
+	char *mainDirectoryPath = "C:\\DebugRTresults\\results\\";
+	char *altDirectoryPath = "C:\\DebugRTresults\\processedresults\\";
+	char *allfilepaths = (char*)malloc(sizeof(char)*MAX_FILES*3*MAX_PATH); // 3 because there are 3 files to transfer (chan,prodpeaks,freqlist)
     
+	// test the pathmaking function (seems like it's working)
+	// makeDataPaths(mainDirectoryPath, altDirectoryPath, 1541011890, 1541011900, allfilepaths);
+	
     // Initialize Winsock
     iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
     if (iResult != 0) {
@@ -139,10 +224,15 @@ int __cdecl main(void)
 			// attempt to interpret packet
 			memcpy(&readPacket, recvbuf, sizeof(struct packet_contents));
 			printf("Type number = %u \n", readPacket.dataType);
-			printf("Channel number = %u \n", ntohl(readPacket.channelNumber));
-			printf("Start time = %u \n", ntohl(readPacket.startTime));
-			printf("End Time = %u \n", ntohl(readPacket.endTime));
-
+			printf("Channel number (hostbyteorder) = %u, (networkbyteorder) = %u \n", ntohl(readPacket.channelNumber), readPacket.channelNumber);
+			printf("Start time (hostbyteorder) = %u, (networkbyteorder) = %u\n", ntohl(readPacket.startTime), readPacket.startTime); // probably just stick to hostbyteorder and don't convert on both sides
+			printf("End Time (hostbyteorder) = %u, (networkbyteorder) = %u \n", ntohl(readPacket.endTime), readPacket.endTime);
+			
+			// attempt to make zip file based on packet
+			makeDataPaths(mainDirectoryPath, altDirectoryPath, readPacket.startTime, readPacket.endTime, allfilepaths);
+			zipFileList(allfilepaths, ((int)readPacket.endTime-(int)readPacket.startTime+1)*3);
+			
+			
         // Echo the buffer back to the sender
             iSendResult = send( ClientSocket, recvbuf, iResult, 0 );
             if (iSendResult == SOCKET_ERROR) {
@@ -176,6 +266,8 @@ int __cdecl main(void)
     // cleanup
     closesocket(ClientSocket);
     WSACleanup();
+	free(allfilepaths);
+	free(longsendbuf);
 
     return 0;
 }
