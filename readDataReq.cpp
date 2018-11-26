@@ -28,6 +28,8 @@
 #define DEFAULT_BUFLEN 512
 #define DEFAULT_PORT "27015"
 
+#define CREATED_ZIPFILE_NAME "testing.zip"
+
 struct packet_contents{
 	uint8_t dataType;
 	uint32_t channelNumber;
@@ -35,17 +37,28 @@ struct packet_contents{
 	uint32_t endTime;
 };
 
-void makeDataPaths(char *mainDirectoryPath, char *altDirectoryPath, uint32_t startTime, uint32_t endTime, char *allfilepaths){
+int makeDataPaths(char *mainDirectoryPath, char *altDirectoryPath, uint32_t startTime, uint32_t endTime, char *allfilepaths, uint32_t channelNumber, uint8_t channelType){
 	uint32_t totalTime = endTime - startTime + 1;
+	const int suffixLen = 8;
+	char channelStringSuffix[suffixLen * 4];
+	
+	// fill the suffix stringstream
+	snprintf(&channelStringSuffix[2*suffixLen], suffixLen, "_sig"); // none for 0 or 1 so far..
+	snprintf(&channelStringSuffix[3*suffixLen], suffixLen, "_msg");
+	
+	const int channelStringLen = 16;
+	char channelString[channelStringLen];
+	snprintf(channelString, channelStringLen, "%u_%u%s\\", channelNumber, channelType, &channelStringSuffix[channelType*suffixLen]); // have to make a special one for mainDirectoryPath
 
-	for (int i = 0; i<totalTime; i++){
-		snprintf(&allfilepaths[i*3*MAX_PATH + 0 * MAX_PATH], MAX_PATH, "%s%u_channel.bin", mainDirectoryPath, startTime + (uint32_t)i);
-		snprintf(&allfilepaths[i*3*MAX_PATH + 1 * MAX_PATH], MAX_PATH, "%s%u_allproductpeaks.bin", mainDirectoryPath, startTime + (uint32_t)i);
-		snprintf(&allfilepaths[i*3*MAX_PATH + 2 * MAX_PATH], MAX_PATH, "%s%u_allfreqlistinds.bin", mainDirectoryPath, startTime + (uint32_t)i);
+	for (int i = 0; i<totalTime; i++){ // FIX THE PATHING TO INCLUDE THE CHANNELNUMBER AND TYPE (_2 or _3) AS WELL THEN IT SHOULD WORK
+		snprintf(&allfilepaths[i*3*MAX_PATH + 0 * MAX_PATH], MAX_PATH, "%s%s%u_channel.bin", mainDirectoryPath, channelString, startTime + (uint32_t)i);
+		snprintf(&allfilepaths[i*3*MAX_PATH + 1 * MAX_PATH], MAX_PATH, "%s%s%u_allproductpeaks.bin", mainDirectoryPath, channelString, startTime + (uint32_t)i);
+		snprintf(&allfilepaths[i*3*MAX_PATH + 2 * MAX_PATH], MAX_PATH, "%s%s%u_allfreqlistinds.bin", mainDirectoryPath, channelString, startTime + (uint32_t)i);
 	
 		printf("%s\n%s\n%s\n\n", &allfilepaths[i*3*MAX_PATH + 0 * MAX_PATH], &allfilepaths[i*3*MAX_PATH + 1 * MAX_PATH], &allfilepaths[i*3*MAX_PATH + 2 * MAX_PATH]);
 	}
 	
+	return 0;
 }
 
 int zipFileList(char *filepaths, int len){
@@ -67,7 +80,7 @@ int zipFileList(char *filepaths, int len){
 	lastNumber = strtol(filename, (char**)&endptr, 10);
 	
 	char zipfilename[MAX_PATH];
-	snprintf(zipfilename,MAX_PATH,"testing.zip");
+	snprintf(zipfilename,MAX_PATH,CREATED_ZIPFILE_NAME);
 	printf("Zipfilename is %s \n", zipfilename);
 	
 	zip_t *zipfile = zip_open(zipfilename, ZIP_CREATE, errorp);
@@ -84,6 +97,7 @@ int zipFileList(char *filepaths, int len){
 			if((zipsource=zip_source_file_create(&filepaths[i*MAX_PATH], 0, -1, errorz)) == NULL || (zipfileIdx = zip_file_add(zipfile, filename, zipsource, ZIP_FL_OVERWRITE)) < 0){
 				zip_source_free(zipsource);
 				printf("Failed to add %s to zip! \n", filename);
+				return 1;
 			}
 			else{
 				zip_set_file_compression(zipfile, zipfileIdx, ZIP_CM_STORE, 1); // 1 to 9, 1 being fastest, ZIP_CM_DEFAULT, ZIP_CM_STORE
@@ -95,6 +109,7 @@ int zipFileList(char *filepaths, int len){
 	if (zip_close(zipfile) < 0){
 		zip_discard(zipfile);
 		printf("Failed to write zip file to disk! \n");
+		return 1;
 	}
 
 	return 0;
@@ -103,7 +118,7 @@ int zipFileList(char *filepaths, int len){
 int __cdecl main(void) 
 {
     WSADATA wsaData;
-    int iResult;
+    long int iResult;
 
     SOCKET ListenSocket = INVALID_SOCKET;
     SOCKET ClientSocket = INVALID_SOCKET;
@@ -111,14 +126,19 @@ int __cdecl main(void)
     struct addrinfo *result = NULL;
     struct addrinfo hints;
 
-    int iSendResult;
+    uint64_t iSendResult, totalSent;
+	int checkDataPathResult;
+	int checkZipResult;
+	FILE *fp;
+	uint64_t fileBytes;
+	
     char recvbuf[DEFAULT_BUFLEN];
     int recvbuflen = DEFAULT_BUFLEN;
 	
 	// prep to make the filepaths
 	char *longsendbuf = (char*)malloc(sizeof(int32_t)*MAX_FILES*SAMP_RATE*3); // there's going to be 2 for the complex data, 0.5 each for prodpeaks/freqlist_inds, since it's at half samp_rate
-	char *mainDirectoryPath = "C:\\DebugRTresults\\results\\";
-	char *altDirectoryPath = "C:\\DebugRTresults\\processedresults\\";
+	char *altDirectoryPath = "C:\\DebugRTresults\\results\\";
+	char *mainDirectoryPath = "C:\\DebugRTresults\\processedresults\\";
 	char *allfilepaths = (char*)malloc(sizeof(char)*MAX_FILES*3*MAX_PATH); // 3 because there are 3 files to transfer (chan,prodpeaks,freqlist)
     
 	// test the pathmaking function (seems like it's working)
@@ -229,19 +249,44 @@ int __cdecl main(void)
 			printf("End Time (hostbyteorder) = %u, (networkbyteorder) = %u \n", ntohl(readPacket.endTime), readPacket.endTime);
 			
 			// attempt to make zip file based on packet
-			makeDataPaths(mainDirectoryPath, altDirectoryPath, readPacket.startTime, readPacket.endTime, allfilepaths);
-			zipFileList(allfilepaths, ((int)readPacket.endTime-(int)readPacket.startTime+1)*3);
+			makeDataPaths(mainDirectoryPath, altDirectoryPath, readPacket.startTime, readPacket.endTime, allfilepaths, readPacket.channelNumber, readPacket.dataType);
+			checkZipResult = zipFileList(allfilepaths, ((int)readPacket.endTime-(int)readPacket.startTime+1)*3); 
+			if (checkZipResult != 0){
+				iResult = snprintf(longsendbuf, MAX_PATH, "FAILED_PACKET_CREATION"); // set the number of bytes to send to the string length
+			}
+			else{
+				fp = fopen(CREATED_ZIPFILE_NAME,"rb");
+				fseek(fp, 0, SEEK_END);
+				fileBytes = ftell(fp); // get the size
+				fseek(fp, 0, SEEK_SET); // go back to start
+				memcpy(longsendbuf, &fileBytes, sizeof(uint64_t)); // put the file length in uint64 at the start to send
+				fread(&longsendbuf[8],sizeof(char),fileBytes,fp); // read the whole file into the buffer after the 8 bytes used for the file length
+				fclose(fp);
+				iResult = fileBytes;
+			}
 			
+			// Echo the send buffer back to the sender
+			iSendResult = send( ClientSocket, longsendbuf, 8, 0); // send the length first in one packet
+			if (iSendResult == SOCKET_ERROR) {
+				printf("Initial send (packet length) failed with error: %d\n", WSAGetLastError());
+				closesocket(ClientSocket);
+				WSACleanup();
+				return 1;
+			}
 			
-        // Echo the buffer back to the sender
-            iSendResult = send( ClientSocket, recvbuf, iResult, 0 );
-            if (iSendResult == SOCKET_ERROR) {
-                printf("send failed with error: %d\n", WSAGetLastError());
-                closesocket(ClientSocket);
-                WSACleanup();
-                return 1;
-            }
-            printf("Bytes sent: %d\n", iSendResult);
+			// now send the data itself
+			totalSent = 8;
+			while(totalSent < fileBytes + 8){
+				iSendResult = send( ClientSocket, &longsendbuf[totalSent], fileBytes, 0 );
+				if (iSendResult == SOCKET_ERROR) {
+					printf("send failed with error: %d\n", WSAGetLastError());
+					closesocket(ClientSocket);
+					WSACleanup();
+					return 1;
+				}
+				totalSent = totalSent + iSendResult;
+				printf("Bytes sent: %llu\n", totalSent);
+			}
         }
         else if (iResult == 0)
             printf("Connection closing...\n");

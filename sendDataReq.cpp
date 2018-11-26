@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <stdint.h>
 
+#define SAMP_RATE 5000 // change all these next time
+#define MAX_FILES 128
 
 // Need to link with Ws2_32.lib, Mswsock.lib, and Advapi32.lib
 #pragma comment (lib, "Ws2_32.lib")
@@ -32,25 +34,37 @@ int __cdecl main(int argc, char **argv)
                     hints;
     // char *sendbuf = "this is a test";
 	struct packet_contents packet0;
-	packet0.dataType = 0;
+	packet0.dataType = 2;
 	packet0.channelNumber = htonl(536);
 	packet0.startTime = htonl(1541036538);
-	printf("host byte order = %u, network byte order = %u \n", 1541036538, htonl(1541036538));
+	// printf("host byte order = %u, network byte order = %u \n", 1541036538, htonl(1541036538));
 	packet0.endTime = htonl(1541036558);
 	char sendbuf1[DEFAULT_BUFLEN];
 	memcpy(sendbuf1, &packet0, sizeof(struct packet_contents));
 	
 	struct packet_contents packet1;
-	packet1.dataType = 1;
+	packet1.dataType = 3;
 	packet1.channelNumber = 532;
 	packet1.startTime = 1541011890;
 	packet1.endTime = 1541011900;
 	char sendbuf2[DEFAULT_BUFLEN];
 	memcpy(sendbuf2, &packet1, sizeof(struct packet_contents));
 	
-    char recvbuf[DEFAULT_BUFLEN];
-    int iResult;
-    int recvbuflen = DEFAULT_BUFLEN;
+    char *recvbuf = (char*)malloc(sizeof(int32_t)*MAX_FILES*SAMP_RATE*3); // same as readDataReq.cpp
+    uint64_t iResult, totalReceived, expectedPacketSize;
+	
+	// make the workspace directory
+	char workspacepath[MAX_PATH];
+	GetCurrentDirectory(MAX_PATH, workspacepath);
+	snprintf(workspacepath, MAX_PATH, "%s\\workspace\\", workspacepath);
+	bool dirResult = CreateDirectoryA(workspacepath,NULL);
+	
+	// make the buffer for consequent directories
+	char dirpath[MAX_PATH];
+	
+    // int recvbuflen = DEFAULT_BUFLEN;
+	
+	FILE *fp;
     
     // Validate the parameters
     if (argc != 2) {
@@ -61,7 +75,7 @@ int __cdecl main(int argc, char **argv)
     // Initialize Winsock
     iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
     if (iResult != 0) {
-        printf("WSAStartup failed with error: %d\n", iResult);
+        printf("WSAStartup failed with error: %llu\n", iResult);
         return 1;
     }
 
@@ -73,7 +87,7 @@ int __cdecl main(int argc, char **argv)
     // Resolve the server address and port
     iResult = getaddrinfo(argv[1], DEFAULT_PORT, &hints, &result);
     if ( iResult != 0 ) {
-        printf("getaddrinfo failed with error: %d\n", iResult);
+        printf("getaddrinfo failed with error: %llu\n", iResult);
         WSACleanup();
         return 1;
     }
@@ -124,7 +138,7 @@ int __cdecl main(int argc, char **argv)
 			return 1;
 		}
 
-		printf("Bytes Sent in packet %i: %ld\n", ii, iResult);
+		printf("Bytes Sent in packet %i: %llu\n", ii, iResult);
 		Sleep(1000);
 	}
 
@@ -138,17 +152,40 @@ int __cdecl main(int argc, char **argv)
     }
 
     // Receive until the peer closes the connection
+	totalReceived = 0;
     do {
 
-        iResult = recv(ConnectSocket, recvbuf, recvbuflen, 0);
-        if ( iResult > 0 )
-            printf("Bytes received: %d\n", iResult);
-        else if ( iResult == 0 )
-            printf("Connection closed\n");
-        else
-            printf("recv failed with error: %d\n", WSAGetLastError());
+        iResult = recv(ConnectSocket, &recvbuf[totalReceived], 65536, 0); // max IP packet length, though it will never hit that
+		if ( totalReceived == 0){ // then it's the first packet telling you the length..
+			memcpy(&expectedPacketSize,recvbuf, sizeof(uint64_t));
+			printf("INCOMING PACKET WITH %llu BYTES \n", expectedPacketSize);
+		}
+        if ( iResult > 0 ){
+            // printf("Bytes received: %d\n", iResult);
+			totalReceived = totalReceived + iResult;
+		}
+        else if ( iResult == 0 ){ printf("Connection closed\n"); }
+        else{printf("recv failed with error: %d\n", WSAGetLastError()); }
 
     } while( iResult > 0 );
+	printf("TOTAL bytes received: %llu \n", totalReceived);
+	if (totalReceived - 8 == expectedPacketSize){
+		printf("FULL PACKET RECEIVED. WRITING TO FILE\n");
+		fp = fopen("testing.zip","wb");
+		fwrite(&recvbuf[8], sizeof(char), expectedPacketSize, fp);
+		fclose(fp);
+		
+		// create the channel workspace directory
+		snprintf(dirpath, MAX_PATH, "%s%u_%u\\", workspacepath, packet1.channelNumber, packet1.dataType);
+		CreateDirectoryA(dirpath, NULL);
+		printf("unzipping to %s \n", dirpath);
+		
+		// unzip the file to the directory
+		
+	}
+	else{
+		printf("FAILED TO RECEIVE FULL PACKET \n");
+	}
 
     // cleanup
     closesocket(ConnectSocket);
