@@ -1,11 +1,13 @@
 #include <stdlib.h>
-#include <stdio.h>
+// #include <stdio.h>
+#include <iostream>
 #include <stdint.h>
 #include <windows.h>
 #include <process.h>
 #include <datetimeapi.h>
 #include <tchar.h>
 #include <Shlwapi.h>
+#include <regex>
 
 #pragma comment(lib, "User32.lib")
 #pragma comment(lib, "Shlwapi.lib")
@@ -84,9 +86,8 @@ void moveWhatIsNeeded(int64_t optimalStartUnixSec, int64_t optimalEndUnixSec, ui
 				if (toMove_boolVec[t] == 1){ // then we have to move it
 					if (MoveFile(sourcefilepath,destfilepath) == 0){
 						lastError = GetLastError();
-						printf("Failed to move %s with error code %i \n", sourcefilepath, lastError);
 						FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, lastError, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), lpMsgBuf, 128 , NULL);
-						printf("Error string : %s \n", lpMsgBuf);
+						printf("Failed to move %s with error code %i: %s", sourcefilepath, lastError, lpMsgBuf); // the format message includes a newline apparently
 					}
 					else{
 						printf("Successfully moved %s to %s \n",sourcefilepath,destfilepath);
@@ -101,6 +102,11 @@ void moveWhatIsNeeded(int64_t optimalStartUnixSec, int64_t optimalEndUnixSec, ui
 int parseDatetimeFile(char *sourcemaindirectorypath, char *destmaindirectorypath, uint8_t *channelcopyswitch, int frontBuffer, int len2move){
 	FILE *fp;
 	fp = fopen("datetimes_to_store.txt","r");
+	
+	// use regex to check the input lines in text file
+	std::regex rx("\\d{1,}(/)\\d{1,}(/)\\d{1,},\\d{1,}:\\d{1,}:\\d{1,}\\n"); // zz the new line is part of the line
+	std::cmatch narrowMatch;
+	bool rxMatched;
 	
 	// declare everything needed
 	// int len2move = 10; // 3 hours of data to move
@@ -120,40 +126,49 @@ int parseDatetimeFile(char *sourcemaindirectorypath, char *destmaindirectorypath
 	// loop over the whole file
 	char line[256];
 	fgets(line,sizeof(line),fp); // read the first line (the help line)
-	while(fgets(line,sizeof(line),fp)){		
-		// process each line
-		sscanf(line, "%hu/%hu/%hu,%hu:%hu:%hu",&systemtimestruct.wYear,&systemtimestruct.wMonth,&systemtimestruct.wDay,&systemtimestruct.wHour,&systemtimestruct.wMinute,&systemtimestruct.wSecond);
-		
-		dateret = GetDateFormatEx(LOCALE_NAME_INVARIANT, DATE_LONGDATE, &systemtimestruct, NULL, (LPWSTR)datestring, sizeof(datestring), NULL);
-		// if (dateret == 0){printf("Failed to get date format!\n");}
-		timeret = GetTimeFormatEx(LOCALE_NAME_INVARIANT, TIME_FORCE24HOURFORMAT, &systemtimestruct, NULL, (LPWSTR)timestring, sizeof(timestring));
-		// if (timeret == 0){printf("Failed to get time format!\n");}
-		printf("Datetime is %ls, %ls \n",(LPWSTR)datestring, (LPWSTR)timestring); // print for confirmation
-		
-		ret = SystemTimeToFileTime(&systemtimestruct, &filetimestruct);
-		printf("Enter 0 to confirm, any other number to stop program: ");
-		scanf("%hhu",&inputConfirm);
-		
-		
-		if (ret!=0 && inputConfirm == 0){
-			li.LowPart = filetimestruct.dwLowDateTime;
-			li.HighPart = filetimestruct.dwHighDateTime;
+	while(fgets(line,sizeof(line),fp)){	
+		// test regex
+		rxMatched = std::regex_match((const char*)line, (const char*)(line + strlen(line)), narrowMatch, rx);
+	
+		if (rxMatched){ // process only legitimate lines
+			// process each line
+			sscanf(line, "%hu/%hu/%hu,%hu:%hu:%hu",&systemtimestruct.wYear,&systemtimestruct.wMonth,&systemtimestruct.wDay,&systemtimestruct.wHour,&systemtimestruct.wMinute,&systemtimestruct.wSecond);
 			
-			unixseconds = (li.QuadPart - UNIX_TIME_START) / TICKS_PER_SECOND;
-			unixseconds = unixseconds - 28800; // move 8 hours down to unix time
+			dateret = GetDateFormatEx(LOCALE_NAME_INVARIANT, DATE_LONGDATE, &systemtimestruct, NULL, (LPWSTR)datestring, sizeof(datestring), NULL);
+			// if (dateret == 0){printf("Failed to get date format!\n");}
+			timeret = GetTimeFormatEx(LOCALE_NAME_INVARIANT, TIME_FORCE24HOURFORMAT, &systemtimestruct, NULL, (LPWSTR)timestring, sizeof(timestring));
+			// if (timeret == 0){printf("Failed to get time format!\n");}
+			printf("\nDatetime is %ls, %ls \n",(LPWSTR)datestring, (LPWSTR)timestring); // print for confirmation
 			
-			printf("Converted time is %lli \n", unixseconds);
+			ret = SystemTimeToFileTime(&systemtimestruct, &filetimestruct);
+			printf("Enter 0 to confirm, any other number to process next datetime in textfile: ");
+			scanf("%hhu",&inputConfirm);
 			
-			optimalEndUnixSec = unixseconds + (int64_t)frontBuffer; // let's add 5 minutes for safety (clock differences between different systems?)
-			optimalStartUnixSec = optimalEndUnixSec - len2move; // move 3 hours back in total
 			
-			memset(toMove_boolVec, 0, sizeof(uint8_t)*len2move); // zero it out
-			checkAlreadyMoved(optimalStartUnixSec, optimalEndUnixSec, toMove_boolVec, destmaindirectorypath, channelcopyswitch); // check whether it's already in storage, flag the missing ones in the uint8 vector
-			
-			moveWhatIsNeeded(optimalStartUnixSec, optimalEndUnixSec, toMove_boolVec, destmaindirectorypath, channelcopyswitch, sourcemaindirectorypath); // now actually do the moving
+			if (ret!=0 && inputConfirm == 0){
+				li.LowPart = filetimestruct.dwLowDateTime;
+				li.HighPart = filetimestruct.dwHighDateTime;
+				
+				unixseconds = (li.QuadPart - UNIX_TIME_START) / TICKS_PER_SECOND;
+				unixseconds = unixseconds - 28800; // move 8 hours down to unix time
+				
+				printf("Converted time is %lli \n", unixseconds);
+				
+				optimalEndUnixSec = unixseconds + (int64_t)frontBuffer; // let's add 5 minutes for safety (clock differences between different systems?)
+				optimalStartUnixSec = optimalEndUnixSec - len2move; // move 3 hours back in total
+				
+				memset(toMove_boolVec, 0, sizeof(uint8_t)*len2move); // zero it out
+				checkAlreadyMoved(optimalStartUnixSec, optimalEndUnixSec, toMove_boolVec, destmaindirectorypath, channelcopyswitch); // check whether it's already in storage, flag the missing ones in the uint8 vector
+				
+				moveWhatIsNeeded(optimalStartUnixSec, optimalEndUnixSec, toMove_boolVec, destmaindirectorypath, channelcopyswitch, sourcemaindirectorypath); // now actually do the moving
+			}
+			else{
+				printf("Failed to convert time\n");
+			}
 		}
 		else{
-			printf("Failed to convert time\n");
+			printf("\nFormat is unexpected, please check! \n");
+			if (strlen(line)==1){printf("Perhaps you left an empty line?\n");}
 		}
 	}
 	
