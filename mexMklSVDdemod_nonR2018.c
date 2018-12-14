@@ -39,7 +39,7 @@ int GetCounter()
 struct thread_data{
 	int thread_t_ID;
 
-	mxComplexDouble *thread_cutSyms;
+	Ipp64fc *thread_cutSyms;
 	int thread_len;
 	int thread_f_len;
 	double *thread_flist;
@@ -59,7 +59,7 @@ unsigned __stdcall mklSVDdemod(void *pArgs){ // gonna write it as if threaded, e
 	
 	int t_ID = inner_data->thread_t_ID;
 	
-	mxComplexDouble *cutSyms = inner_data->thread_cutSyms;
+	Ipp64fc *cutSyms = inner_data->thread_cutSyms;
 	int len = inner_data->thread_len;
 	int f_len = inner_data->thread_f_len;
 	double *flist = inner_data->thread_flist;
@@ -147,7 +147,8 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	start_t = GetCounter();
 	
     // declare variables
-	mxComplexDouble *cutSyms;
+	// mxComplexDouble *cutSyms;
+	double *cutSyms_r, *cutSyms_i;
 	int len, f_len;
 	double *flist;
 	double fstep, BR;
@@ -165,8 +166,10 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
         mexErrMsgIdAndTxt("MyToolbox:arrayProduct:nrhs","4 Inputs required.");
     }
 
-	cutSyms = mxGetComplexDoubles(prhs[0]);
-	flist = mxGetDoubles(prhs[1]);
+	// cutSyms = mxGetComplexDoubles(prhs[0]);
+	cutSyms_r = mxGetPr(prhs[0]);
+	cutSyms_i = mxGetPi(prhs[0]);
+	flist = (double*)mxGetPr(prhs[1]);
 	fstep = (double)mxGetScalar(prhs[2]);
 	BR = (double)mxGetScalar(prhs[3]);
     
@@ -178,13 +181,16 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	plhs[1] = mxCreateDoubleMatrix(1,f_len,mxREAL);
 	plhs[2] = mxCreateDoubleMatrix(1,f_len,mxREAL);
     /* get a pointer to the real data in the output matrix */
-    gradlist = mxGetDoubles(plhs[0]);
-	indicator = mxGetDoubles(plhs[1]);
-	phaselist = mxGetDoubles(plhs[2]);
+    gradlist = mxGetPr(plhs[0]);
+	indicator = mxGetPr(plhs[1]);
+	phaselist = mxGetPr(plhs[2]);
 	
 	
 	
 	// =============/* call the computational routine */==============
+	Ipp64fc *cutSyms = ippsMalloc_64fc_L(len);
+	ippsRealToCplx_64f((Ipp64f*)cutSyms_r, (Ipp64f*)cutSyms_i, cutSyms, len); // convert to interleaved
+	
 	for (t = 0; t<1; t++){
 		t_data_array[t].thread_t_ID = t;
 		
@@ -207,5 +213,6 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	
 	// =====================================
 	
+	ippsFree(cutSyms);
 
 }
