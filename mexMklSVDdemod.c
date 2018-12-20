@@ -94,11 +94,11 @@ unsigned __stdcall mklSVDdemod(void *pArgs){ // gonna write it as if threaded, e
 	else{ ippsTone_64fc(fcurrenttone, len, 1.0, (BR + flist[0] - fstep)/BR, &phase, ippAlgHintAccurate);}
 	
 	// timing
-	// == INITIALIZE TIMING ==
-	int start_t = StartCounter();
-	int end_t;
+	// // == INITIALIZE TIMING ==
+	// int start_t = StartCounter();
+	// int end_t;
 	
-	start_t = GetCounter();
+	// start_t = GetCounter();
 	// iterate over the flist
 	for (int f = 0; f<f_len; f++){
 		ippsMul_64fc_I(fsteptone, fcurrenttone, len);
@@ -129,8 +129,8 @@ unsigned __stdcall mklSVDdemod(void *pArgs){ // gonna write it as if threaded, e
 	ippsFree(shiftChan);
 	ippsFree(thing2svd);
 	
-	end_t = GetCounter();
-	printf("Time taken INNER MEX FUNC = %g ms \n",(end_t - start_t)/PCFreq);
+	// end_t = GetCounter();
+	// printf("Time taken INNER MEX FUNC = %g ms \n",(end_t - start_t)/PCFreq);
 
 	// _endthreadex(0);
     return 0;
@@ -141,10 +141,10 @@ unsigned __stdcall mklSVDdemod(void *pArgs){ // gonna write it as if threaded, e
 // outputs are: gradlist, indicator, phaselist
 void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	ippInit();
-	// == INITIALIZE TIMING ==
-	int start_t = StartCounter();
-	int end_t;
-	start_t = GetCounter();
+	// // == INITIALIZE TIMING ==
+	// int start_t = StartCounter();
+	// int end_t;
+	// start_t = GetCounter();
 	
     // declare variables
 	mxComplexDouble *cutSyms;
@@ -202,8 +202,8 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 		mklSVDdemod((void*)&t_data_array[t]); // non-threaded call
 	}
 	
-	end_t = GetCounter();
-	printf("Time taken COMPLETE MEX FUNC = %g ms \n",(end_t - start_t)/PCFreq);
+	// end_t = GetCounter();
+	// printf("Time taken COMPLETE MEX FUNC = %g ms \n",(end_t - start_t)/PCFreq);
 	
 	// =====================================
 	
