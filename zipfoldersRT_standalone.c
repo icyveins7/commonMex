@@ -10,7 +10,7 @@
 
 #pragma comment(lib, "User32.lib")
 #pragma comment(lib, "Shlwapi.lib")
-#pragma comment(lib, "Pathcch.lib")
+// #pragma comment(lib, "Pathcch.lib")
 
 #include <zip.h>
 
@@ -45,17 +45,17 @@ unsigned __stdcall threaded_zipFolder(void *pArgs){
 	// folder declarations
 	HANDLE hFind;
 	WIN32_FIND_DATA ffd;
-	char sourcedirpath[MAX_PATH];
-	char sourcedirpath_dir[MAX_PATH];
+	TCHAR sourcedirpath[MAX_PATH];
+	TCHAR sourcedirpath_dir[MAX_PATH];
 	
 	// zip declarations
 	int *errorp = NULL;
 	zip_error_t *errorz = NULL;
-	char filename[MAX_PATH];
-	char filepath[MAX_PATH];
+	TCHAR filename[MAX_PATH];
+	TCHAR filepath[MAX_PATH];
 	zip_uint64_t zipfileIdx = 0;
-	char zipfilename[MAX_PATH];
-	char zipfilepath[MAX_PATH];
+	TCHAR zipfilename[MAX_PATH];
+	TCHAR zipfilepath[MAX_PATH];
 	zip_t *zipfile;
 	zip_source_t *zipsource;
 	
@@ -63,10 +63,12 @@ unsigned __stdcall threaded_zipFolder(void *pArgs){
 	int zipWriteCheck, zipCloseCheck;
 	
 	for (int i = t_ID; i<numFolders; i = i+NUM_THREADS){
-		snprintf(sourcedirpath, MAX_PATH, "%s", &folderpaths[i*MAX_PATH]); // each sourcedirpath should end with trailing backslash
+		snprintf(sourcedirpath, MAX_PATH, "%s\\", &folderpaths[i*MAX_PATH]); // each sourcedirpath should end with trailing backslash
 		
-		snprintf(zipfilename, MAX_PATH, "%s", &folderpaths[i*MAX_PATH]); // this also ends with trailing backslash
-		PathCchRemoveFileSpec(zipfilename,MAX_PATH); // this removes the trailing backslash
+		snprintf(zipfilename, MAX_PATH, "%s", &folderpaths[i*MAX_PATH]); // this does not end with backslash
+		// printf("thread %i, zipfilename is %s\n", t_ID, zipfilename);
+		// PathCchRemoveFileSpec((PWSTR)zipfilename,MAX_PATH); // this removes the trailing backslash
+		// printf("thread %i, after pathcchremove, zipfilename is %s\n", t_ID, zipfilename);
 		PathStripPathA(zipfilename); // this removes the front part of the path, leaving the directory name alone
 		snprintf(zipfilepath, MAX_PATH, "%s%s.zip", outerdirpath, zipfilename); // this forms the full path to the zip file
 		snprintf(sourcedirpath_dir, MAX_PATH, "%s*", sourcedirpath); // this adds the * so the directory can list contents
@@ -158,7 +160,7 @@ int main( int argc, char *argv[]){
 	FindNextFileA(hFind, &ffd); // read the first two . and .. folders returned
 	// printf("second file is %s \n",ffd.cFileName);
 	while(FindNextFileA(hFind, &ffd)!=0){
-		snprintf(sourcedirpath, MAX_PATH, "%s%s\\", outerdirpath, ffd.cFileName);
+		// snprintf(sourcedirpath, MAX_PATH, "%s%s\", outerdirpath, ffd.cFileName);
 		// printf("subfolderpath is %s\n", sourcedirpath);
 		numFolders++;
 	}
@@ -171,7 +173,7 @@ int main( int argc, char *argv[]){
 	FindNextFileA(hFind, &ffd); // read the first two . and .. folders returned
 	int i = 0;
 	while(FindNextFileA(hFind, &ffd)!=0){
-		snprintf(&folderpaths[i*MAX_PATH], MAX_PATH, "%s%s\\", outerdirpath, ffd.cFileName);
+		snprintf(&folderpaths[i*MAX_PATH], MAX_PATH, "%s%s", outerdirpath, ffd.cFileName);
 		printf("subfolderpath is %s\n", &folderpaths[i*MAX_PATH]);
 		i++;
 	}
