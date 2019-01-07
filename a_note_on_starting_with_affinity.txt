@@ -1,0 +1,16 @@
+In order to directly start app with the cpu cores that you want
+
+E.g. 4 core cpu
+0101 Means 1st and 3rd core are on (i.e. read from right to left). Use programmer mode in calculator, type in binary, and convert.
+This would convert to 5 in HEX so type
+start /AFFINITY 5 app.exe
+
+This extends to processor groups. For 24-core, 2 nodes (i.e. 2 physical CPUs), to enable the first 16 cores on each would look like
+000000001111111111111111000000001111111111111111
+
+so the resulting call is
+start /AFFINITY 00FFFF00FFFF app.exe
+
+Note that in this call the starting left 24 bits are the 2nd node (just like how the starting bits are the 'higher cores') so e.g.
+start /AFFINITY FF0000000000
+will start on the last 8 cores of the 2nd node.
