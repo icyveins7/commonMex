@@ -15,12 +15,14 @@
 const int64_t UNIX_TIME_START = 0x019DB1DED53E8000;
 const int64_t TICKS_PER_SECOND = 10000000; // yes, 7 zeroes
 
-void checkAlreadyMoved(int64_t optimalStartUnixSec, int64_t optimalEndUnixSec, uint8_t *toMove_boolVec, char *destmaindirectorypath, uint8_t *channelcopyswitch){
+void checkAlreadyMoved(int64_t optimalStartUnixSec, int64_t optimalEndUnixSec, uint8_t *toMove_boolVec, char *destmaindirectorypath, uint8_t *channelcopyswitch, FILE *flog){
 	char destfilepath[MAX_PATH]; // buffer for the full path to each binfile
 	char destsubdirectory[MAX_PATH]; // buffer for the directory path for reading
 	
 	int i; // index for recording channel (should be 0 to 3)
 	int64_t t, filetime; // index for time of the file, and filetime
+	int64_t numAlreadyPresent = 0;
+	int64_t num2Move = 0;
 	
 	for (t=0; t<optimalEndUnixSec-optimalStartUnixSec; t++){
 		filetime = t + optimalStartUnixSec;
@@ -34,17 +36,24 @@ void checkAlreadyMoved(int64_t optimalStartUnixSec, int64_t optimalEndUnixSec, u
 				if (PathFileExistsA(destfilepath)){
 					toMove_boolVec[t] = 0;
 					printf("%s already present in storage \n", destfilepath); // for debugging
+					
+					numAlreadyPresent++;
 				}
 				else{ 
 					toMove_boolVec[t] = 1;
 					// printf("%s to be moved! \n", destfilepath); // for debugging
+					
+					num2Move++;
 				}
 			}
 		}
 	}
+	
+	// add to logfile
+	fprintf(flog, "%lld files already saved.\n%lld files need to be saved.\n", numAlreadyPresent, num2Move);
 }
 
-void moveWhatIsNeeded(int64_t optimalStartUnixSec, int64_t optimalEndUnixSec, uint8_t *toMove_boolVec, char *destmaindirectorypath, uint8_t *channelcopyswitch, char *sourcemaindirectorypath){
+void moveWhatIsNeeded(int64_t optimalStartUnixSec, int64_t optimalEndUnixSec, uint8_t *toMove_boolVec, char *destmaindirectorypath, uint8_t *channelcopyswitch, char *sourcemaindirectorypath, FILE *flog){
 	char destfilepath[MAX_PATH]; // buffer for the full path to each binfile
 	char destsubdirectory[MAX_PATH]; // buffer for the directory path for writing
 	char sourcefilepath[MAX_PATH]; // buffer for full path to source bin file
@@ -55,12 +64,10 @@ void moveWhatIsNeeded(int64_t optimalStartUnixSec, int64_t optimalEndUnixSec, ui
 	
 	int i; // index for recording channel (should be 0 to 3)
 	int64_t t, filetime; // index for time of the file, and filetime
+	int64_t numSuccessMoves = 0;
+	int64_t numFailedMoves = 0;
 	
-	// before everything, make the directories if they don't yet exist (likely for the first time)
-	if (PathFileExistsA(destmaindirectorypath) == false){
-		printf("Making destination main directory for first time \n");
-		CreateDirectoryA(destmaindirectorypath, NULL);
-	}
+
 	for (i=0; i<4; i++){ // and these are for the subdirectories
 		if (channelcopyswitch[i] == 1){
 			snprintf(destsubdirectory,MAX_PATH,"%s%i\\",destmaindirectorypath,i); // make the subdirectory path to 0,1,2,3
@@ -88,24 +95,44 @@ void moveWhatIsNeeded(int64_t optimalStartUnixSec, int64_t optimalEndUnixSec, ui
 						lastError = GetLastError();
 						FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, lastError, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), lpMsgBuf, 128 , NULL);
 						printf("Failed to move %s with error code %i: %s", sourcefilepath, lastError, lpMsgBuf); // the format message includes a newline apparently
+						
+						numFailedMoves++;
 					}
 					else{
 						printf("Successfully moved %s to %s \n",sourcefilepath,destfilepath);
+						
+						numSuccessMoves++;
 					}
 				}
 			}
 		}
 	}	
 	
+	// add to logfile
+	fprintf(flog,"%lld successful saves.\n%lld failed saves.\n",numSuccessMoves,numFailedMoves);
+	
 }
 
 int parseDatetimeFile(char *sourcemaindirectorypath, char *destmaindirectorypath, uint8_t *channelcopyswitch, int frontBuffer, int len2move){
+	// before everything, make the directories if they don't yet exist (likely for the first time)
+	if (PathFileExistsA(destmaindirectorypath) == false){
+		printf("Making destination main directory for first time \n");
+		CreateDirectoryA(destmaindirectorypath, NULL);
+	}
+	
+	
 	FILE *fp;
 	fp = fopen("datetimes_to_store.txt","r");
 	
+	FILE *flog;
+	char flogpath[MAX_PATH];
+	snprintf(flogpath, MAX_PATH, "%s\\logfile.log", destmaindirectorypath);
+	flog = fopen(flogpath, "a");
+	
 	// use regex to check the input lines in text file
-	std::regex rx("\\d{1,}(/)\\d{1,}(/)\\d{1,},\\d{1,}:\\d{1,}:\\d{1,}\\n"); // zz the new line is part of the line
-	std::cmatch narrowMatch;
+	// std::regex rx("\\d{1,}(/)\\d{1,}(/)\\d{1,},\\d{1,}:\\d{1,}:\\d{1,}\\n"); // zz the new line is part of the line
+	std::regex rx("\\d{1,}(/)\\d{1,}(/)\\d{1,},\\d{1,}:\\d{1,}:\\d{1,}"); // we remove the newline char and use regex_search instead
+	std::cmatch narrowMatch; // we use a C-style string.
 	bool rxMatched;
 	
 	// declare everything needed
@@ -128,11 +155,13 @@ int parseDatetimeFile(char *sourcemaindirectorypath, char *destmaindirectorypath
 	fgets(line,sizeof(line),fp); // read the first line (the help line)
 	while(fgets(line,sizeof(line),fp)){	
 		// test regex
-		rxMatched = std::regex_match((const char*)line, (const char*)(line + strlen(line)), narrowMatch, rx);
+		// rxMatched = std::regex_match((const char*)line, (const char*)(line + strlen(line)), narrowMatch, rx);
+		// use regex search instead..
+		rxMatched = std::regex_search((const char*)line, (const char*)(line + strlen(line)), narrowMatch, rx);
 	
 		if (rxMatched){ // process only legitimate lines
-			// process each line
-			sscanf(line, "%hu/%hu/%hu,%hu:%hu:%hu",&systemtimestruct.wYear,&systemtimestruct.wMonth,&systemtimestruct.wDay,&systemtimestruct.wHour,&systemtimestruct.wMinute,&systemtimestruct.wSecond);
+			// process each line, start at the position of the regex_matched index
+			sscanf(&line[narrowMatch.position(0)], "%hu/%hu/%hu,%hu:%hu:%hu",&systemtimestruct.wYear,&systemtimestruct.wMonth,&systemtimestruct.wDay,&systemtimestruct.wHour,&systemtimestruct.wMinute,&systemtimestruct.wSecond);
 			
 			dateret = GetDateFormatEx(LOCALE_NAME_INVARIANT, DATE_LONGDATE, &systemtimestruct, NULL, (LPWSTR)datestring, sizeof(datestring), NULL);
 			// if (dateret == 0){printf("Failed to get date format!\n");}
@@ -146,6 +175,9 @@ int parseDatetimeFile(char *sourcemaindirectorypath, char *destmaindirectorypath
 			
 			
 			if (ret!=0 && inputConfirm == 0){
+				// add logging for when command is accepted
+				fprintf(flog, "Datetime entered and accepted: %s \n", &line[narrowMatch.position()]);
+				
 				li.LowPart = filetimestruct.dwLowDateTime;
 				li.HighPart = filetimestruct.dwHighDateTime;
 				
@@ -158,9 +190,13 @@ int parseDatetimeFile(char *sourcemaindirectorypath, char *destmaindirectorypath
 				optimalStartUnixSec = optimalEndUnixSec - len2move; // move 3 hours back in total
 				
 				memset(toMove_boolVec, 0, sizeof(uint8_t)*len2move); // zero it out
-				checkAlreadyMoved(optimalStartUnixSec, optimalEndUnixSec, toMove_boolVec, destmaindirectorypath, channelcopyswitch); // check whether it's already in storage, flag the missing ones in the uint8 vector
+				checkAlreadyMoved(optimalStartUnixSec, optimalEndUnixSec, toMove_boolVec, destmaindirectorypath, channelcopyswitch, flog); // check whether it's already in storage, flag the missing ones in the uint8 vector
 				
-				moveWhatIsNeeded(optimalStartUnixSec, optimalEndUnixSec, toMove_boolVec, destmaindirectorypath, channelcopyswitch, sourcemaindirectorypath); // now actually do the moving
+				moveWhatIsNeeded(optimalStartUnixSec, optimalEndUnixSec, toMove_boolVec, destmaindirectorypath, channelcopyswitch, sourcemaindirectorypath, flog); // now actually do the moving
+				
+				// print a divider per timedate call within a program execution
+				fprintf(flog,"-------------------------------------------\n");
+				
 			}
 			else{
 				printf("Failed to convert time\n");
@@ -173,8 +209,11 @@ int parseDatetimeFile(char *sourcemaindirectorypath, char *destmaindirectorypath
 	}
 	
 	
+	// print one closing line per program call to logfile
+	fprintf(flog,"====================================================\n\n");
 	
 	fclose(fp);
+	fclose(flog);
 	return 0;
 }
 
