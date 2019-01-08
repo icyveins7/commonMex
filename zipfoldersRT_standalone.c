@@ -21,7 +21,7 @@ struct t_data{
 	
 	char *thread_folderpaths;
 	int thread_numFolders;
-	int thread_deleteFlag;
+	// int thread_deleteFlag;
 	char *thread_outerdirpath;
 	
 	int *thread_successArray;
@@ -38,7 +38,7 @@ unsigned __stdcall threaded_zipFolder(void *pArgs){
 	
 	char *folderpaths = inner_data->thread_folderpaths;
 	int numFolders = inner_data->thread_numFolders;
-	int deleteFlag = inner_data->thread_deleteFlag;
+	// int deleteFlag = inner_data->thread_deleteFlag;
 	char *outerdirpath = inner_data->thread_outerdirpath;
 	int *successArray = inner_data->thread_successArray;
 	
@@ -136,7 +136,7 @@ int main( int argc, char *argv[]){
     int t; // for loops over threads
     HANDLE ThreadList[NUM_THREADS]; // handles to threads
     
-	if (argc != 3){printf("Args are (outerdirpath) (deleteFlag)\n"); return 1;}
+	if (argc != 2){printf("Args are (outerdirpath)\n"); return 1;}
 	
 	int deleteFlag;
 	sscanf (argv[2],"%d",&deleteFlag);
@@ -189,7 +189,7 @@ int main( int argc, char *argv[]){
 		
 		t_data_array[t].thread_folderpaths = folderpaths;
 		t_data_array[t].thread_numFolders = numFolders;
-		t_data_array[t].thread_deleteFlag = deleteFlag;
+		// t_data_array[t].thread_deleteFlag = deleteFlag;
 		t_data_array[t].thread_outerdirpath = outerdirpath;
 		t_data_array[t].thread_successArray = successArray;
 
