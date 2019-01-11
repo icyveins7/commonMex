@@ -84,6 +84,8 @@ unsigned __stdcall threaded_unzipFolders(void *pArgs){
 	
 	char *readBuf = (char*)malloc(sizeof(char)*BUFBYTES);
 	
+	size_t debug;
+	
 	for (int i=t_ID; i<numZips; i=i+NUM_THREADS){
 		// reset zip variables
 		errorp = NULL;
@@ -104,25 +106,25 @@ unsigned __stdcall threaded_unzipFolders(void *pArgs){
 		if (errorp == NULL){
 			printf("THREAD %i: Managed to open %s! \n", t_ID, &zippaths[i*MAX_PATH]);
 			
-			numFilesInZip = zip_get_num_entries(zipfile, ZIP_FL_UNCHANGED);
+			numFilesInZip = zip_get_num_entries(zipfile, 0);
 			printf("THREAD %i: Counted files in %s \n", t_ID, &zippaths[i*MAX_PATH]);
 			
 			for (int i = 0; i<numFilesInZip; i++){
-				if (zip_stat_index(zipfile, i, ZIP_FL_UNCHANGED, &zipFileInfo) !=0 ){ 
+				if (zip_stat_index(zipfile, i, 0, &zipFileInfo) !=0 ){ 
 					printf("THREAD %i: Failed to open file index %i in %s! \n", t_ID, i, &zippaths[i*MAX_PATH]);
 					successArray[i] = 0;
 				}
 				else{
-					fileInZip = zip_fopen_index(zipfile, i, ZIP_FL_UNCHANGED);
+					fileInZip = zip_fopen_index(zipfile, i, 0);
 					if (fileInZip != NULL){ // check that the file in the zip is returned..
 						fileBytesRead = zip_fread(fileInZip, readBuf, (zip_uint64_t)zipFileInfo.size);
 						
 						if (fileBytesRead == (zip_uint64_t)zipFileInfo.size){ // if it's properly read, write it to disk
 							snprintf(current_file, MAX_PATH, "%s%s", current_dir, zipFileInfo.name); // make the full path to the unzipped file
-							fp = fopen(current_file, "w");
-							fwrite(readBuf,sizeof(char),fileBytesRead,fp);
+							fp = fopen(current_file, "wb");
+							debug = fwrite(readBuf,sizeof(char),fileBytesRead,fp);
 							fclose(fp);
-							
+							printf("Wrote %zd bytes to %s \n", debug, current_file);
 						}
 						else{
 							printf("THREAD %i: Failed to write %s to %s!\n", t_ID, zipFileInfo.name, current_dir);
