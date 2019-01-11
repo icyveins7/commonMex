@@ -84,7 +84,7 @@ unsigned __stdcall threaded_unzipFolders(void *pArgs){
 	
 	char *readBuf = (char*)malloc(sizeof(char)*BUFBYTES);
 	
-	size_t debug;
+	// size_t debug;
 	
 	for (int i=t_ID; i<numZips; i=i+NUM_THREADS){
 		// reset zip variables
@@ -122,9 +122,9 @@ unsigned __stdcall threaded_unzipFolders(void *pArgs){
 						if (fileBytesRead == (zip_uint64_t)zipFileInfo.size){ // if it's properly read, write it to disk
 							snprintf(current_file, MAX_PATH, "%s%s", current_dir, zipFileInfo.name); // make the full path to the unzipped file
 							fp = fopen(current_file, "wb");
-							debug = fwrite(readBuf,sizeof(char),fileBytesRead,fp);
+							fwrite(readBuf,sizeof(char),fileBytesRead,fp);
 							fclose(fp);
-							printf("Wrote %zd bytes to %s \n", debug, current_file);
+							// printf("Wrote %zd bytes to %s \n", debug, current_file);
 						}
 						else{
 							printf("THREAD %i: Failed to write %s to %s!\n", t_ID, zipFileInfo.name, current_dir);
