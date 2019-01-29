@@ -94,7 +94,7 @@ int __cdecl main(int argc, char **argv)
 
     // Attempt to connect to an address until one succeeds
     for(ptr=result; ptr != NULL ;ptr=ptr->ai_next) {
-
+		printf("Iterating through linked list of available address/port combinations..\n");
         // Create a SOCKET for connecting to server
         ConnectSocket = socket(ptr->ai_family, ptr->ai_socktype, 
             ptr->ai_protocol);
@@ -117,7 +117,7 @@ int __cdecl main(int argc, char **argv)
     freeaddrinfo(result);
 
     if (ConnectSocket == INVALID_SOCKET) {
-        printf("Unable to connect to server!\n");
+        printf("Unable to connect to server after finishing the linked list!\n");
         WSACleanup();
         return 1;
     }
