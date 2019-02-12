@@ -96,8 +96,7 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	mxComplexDouble *out;
 
 	int t; // for loops over threads
-    HANDLE *ThreadList; // handles to threads
-    ThreadList = (HANDLE*)mxMalloc(NUM_THREADS*sizeof(HANDLE));
+    HANDLE ThreadList[NUM_THREADS]; // handles to threads
 
 	
     /* check for proper number of arguments */
