@@ -104,6 +104,9 @@ unsigned __stdcall threaded_wola(void *pArgs){
         // memcpy(&out[nprime*N],fout,sizeof(mxComplexDouble)*N); // if you write directly, you won't need to copy it
 	}
 	
+	ippsFree(dft_in);
+	ippsFree(dft_out);
+	
 	_endthreadex(0);
     return 0;
 }
