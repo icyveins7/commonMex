@@ -78,7 +78,21 @@ int main(int argc, char* argv[]){
 					fseek(fp, 0, SEEK_END);
 					fileBytes = ftell(fp);
 					fclose(fp);
-
+					
+					if (fileBytes != expectedFileSizeBytes){ // on first try, if the size is wrong, wait a bit to see if it fills to the correct size
+						Sleep(2500);
+						fp = fopen(filepath, "rb");
+						fseek(fp,0,SEEK_END);
+						fileBytes = ftell(fp);
+						fclose(fp); // we get the size again
+						
+						if (fileBytes != expectedFileSizeBytes) { // if it's still not, just delete it
+							DeleteFileA(filepath);
+							printf("Deleted %s because of incorrect size!\n", filepath);
+						}
+					}
+					
+					// if at first it's already the correct size, or after waiting it hasnt been deleted, then continue..
 					if (fileBytes == expectedFileSizeBytes) {
 						printf("First file is %s \n", filepath);
 						snprintf(targetfilepath, BUFSIZE, "%s%s", targetdirpath, singlefilename);
