@@ -8,7 +8,7 @@
 #include "ipp.h"
 // #include <immintrin.h> // include if trying the intrinsics code
 
-#define NUM_THREADS 12 // seems like a good number now, you may increase if your computation time takes more than 1 second, otherwise spawning more threads takes longer than the actual execution time per thread lol
+#define NUM_THREADS 24 // seems like a good number now, you may increase if your computation time takes more than 1 second, otherwise spawning more threads takes longer than the actual execution time per thread lol
 
 // timing functions
 double PCFreq = 0.0;
@@ -180,7 +180,6 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	start_t = GetCounter();
 
     // =============/* call the computational routine */==============
-	GROUP_AFFINITY currentGroupAffinity, newGroupAffinity;
     //start threads
     for(t=0;t<NUM_THREADS;t++){
 		t_data_array[t].thread_t_ID = t;
@@ -202,11 +201,6 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 		
 	
         ThreadList[t] = (HANDLE)_beginthreadex(NULL,0,&xcorr_singleChannel,(void*)&t_data_array[t],0,NULL);
-		// GetThreadGroupAffinity(ThreadList[t], &currentGroupAffinity);
-		// newGroupAffinity = currentGroupAffinity;
-		// newGroupAffinity.Group = t%2;
-		// SetThreadGroupAffinity(ThreadList[t], &newGroupAffinity, NULL);
-		// GetThreadGroupAffinity(ThreadList[t], &currentGroupAffinity);
         // printf("Beginning threadID %i..\n",t_data_array[t].thread_t_ID);
     }
     
@@ -233,47 +227,3 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	ippFree(pBuffer);
 	ippFree(pMemInit);
 }
-
-
-// void dotstar_splitsplit2fftw(double *r_x, double *i_x, double *r_y, double *i_y, fftw_complex *out, int len){
-	// int i;
-    // double A, B, C;
-	// for (i=0;i<len;i++){
-        // A = i_x[i] * i_y[i];
-        // B = r_x[i] * r_y[i];
-        // out[i][0] = B - A;
-        // C = (r_x[i] + i_x[i])*(r_y[i] + i_y[i]);
-        // out[i][1] = C - B - A;
-// // 		out[i][0] = r_x[i]*r_y[i] - i_x[i]*i_y[i]; // old code with 4 mults
-// // 		out[i][1] = r_x[i]*i_y[i] + r_y[i]*i_x[i];
-	// }
-// // //     BELOW IS THE INTRINSICS CODE, NO APPRECIABLE SPEED INCREASE (~3% at most), WORKS THO (BUT DOES NOT ACCOUNT FOR NON FACTOR OF 4 ARRAY LENGTHS)
-// //     int i;
-// //     double *dout, *dout_i;
-// //     __m256d xr, xi, yr, yi, outr, outi, A, B, C;
-// //     for (i=0;i<len;i=i+4){
-// //         xr = _mm256_loadu_pd(&r_x[i]);
-// //         xi = _mm256_loadu_pd(&i_x[i]);
-// //         yr = _mm256_loadu_pd(&r_y[i]);
-// //         yi = _mm256_loadu_pd(&i_y[i]);
-// //         
-// //         A = _mm256_mul_pd(xi,yi); // this is bd
-// //         outr = _mm256_fmsub_pd(xr,yr,A);
-// //         dout = (double*)&outr;
-// //         out[i][0] = dout[0]; // copy to fftw_complex, real parts
-// //         out[i+1][0] = dout[1];
-// //         out[i+2][0] = dout[2];
-// //         out[i+3][0] = dout[3];
-// //         
-// //         B = _mm256_add_pd(xr,xi);
-// //         C = _mm256_add_pd(yr,yi);
-// //         outi = _mm256_fmsub_pd(B,C,outr); // its now (a+b)(c+d) - ac + bd
-// //         outi = _mm256_sub_pd(outi,A);
-// //         outi = _mm256_sub_pd(outi,A); // now its (a+b)(c+d) - ac - bd, made 2 subtractions
-// //         dout_i = (double*)&outi;
-// //         out[i][1] = dout_i[0]; // copy to fftw_complex, imag parts
-// //         out[i+1][1] = dout_i[1];
-// //         out[i+2][1] = dout_i[2];
-// //         out[i+3][1] = dout_i[3];
-// //     }
-// }
