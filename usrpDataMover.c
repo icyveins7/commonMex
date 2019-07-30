@@ -23,9 +23,10 @@ int main(int argc, char* argv[]){
 	int expectedFileSizeBytes;
 	int ensureEarliestFlag;
 	int copyInsteadOfMove;
+	int sleepTime = 500; // initialize default
 	
-	if (argc == 7){
-
+	if (argc == 7 || argc == 8){
+		// set most of them
 		sourcedirpathlen = snprintf(sourcedirpath, BUFSIZE, "%s", argv[1]);
 		printf("Set sourcedir to %s \n",&sourcedirpath[0]);
 
@@ -43,6 +44,10 @@ int main(int argc, char* argv[]){
 		
 		sscanf (argv[6], "%d", &copyInsteadOfMove);
 		printf("Set copyInsteadOfMove to %i \n", copyInsteadOfMove);
+		
+		if (argc == 8){ // if they added the argument then use this sleep timing
+			sscanf (argv[7], "%d", & sleepTime);
+		}
 	}
 	else {
 		printf("Arguments are (sourcedirpath) (targetdirpath) (storedBufferLen) (expectedFileSizeBytes) (ensureEarliestFlag) (copyInsteadOfMove) \n");
@@ -131,7 +136,7 @@ int main(int argc, char* argv[]){
 				DeleteFileA(filepath);
 			}
 
-			Sleep(500);
+			Sleep(sleepTime);
 		}
 
 	}
@@ -253,7 +258,7 @@ int main(int argc, char* argv[]){
 			}
 
 			printf("Sleeping... \n");
-			Sleep(500);
+			Sleep(sleepTime);
 		}
 	}
 
