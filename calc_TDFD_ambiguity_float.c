@@ -8,7 +8,7 @@
 #include "ipp.h"
 // #include <immintrin.h> // include if trying the intrinsics code
 
-#define NUM_THREADS 24 // seems like a good number now, you may increase if your computation time takes more than 1 second, otherwise spawning more threads takes longer than the actual execution time per thread lol
+#define NUM_THREADS 12 // seems like a good number now, you may increase if your computation time takes more than 1 second, otherwise spawning more threads takes longer than the actual execution time per thread lol
 
 // timing functions
 double PCFreq = 0.0;
