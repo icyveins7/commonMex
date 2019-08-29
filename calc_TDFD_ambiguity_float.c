@@ -8,7 +8,7 @@
 #include "ipp.h"
 // #include <immintrin.h> // include if trying the intrinsics code
 
-#define NUM_THREADS 12 // seems like a good number now, you may increase if your computation time takes more than 1 second, otherwise spawning more threads takes longer than the actual execution time per thread lol
+#define NUM_THREADS 4 // seems like a good number now, you may increase if your computation time takes more than 1 second, otherwise spawning more threads takes longer than the actual execution time per thread lol
 
 // timing functions
 double PCFreq = 0.0;
@@ -154,7 +154,7 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
     out = mxGetSingles(plhs[0]);
 	
 	// ===== IPP DFT Allocations =====
-	start_t = GetCounter();
+	// start_t = GetCounter();
 	int sizeSpec = 0, sizeInit = 0, sizeBuf = 0;   
 	ippsDFTGetSize_C_32fc(fftlen, IPP_FFT_NODIV_BY_ANY, ippAlgHintNone, &sizeSpec, &sizeInit, &sizeBuf); // this just fills the 3 integers
 	/* memory allocation */
@@ -167,11 +167,11 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 		pMemInit[t] = (Ipp8u*)ippMalloc(sizeInit);
 		ippsDFTInit_C_32fc(fftlen, IPP_FFT_NODIV_BY_ANY, ippAlgHintNone,  pSpec[t], pMemInit[t]); // kinda like making the fftw plan?
 	}
-	end_t = GetCounter();
-	totalTime = (end_t - start_t)/PCFreq; // in ms
-	printf("Time to prepare IPP DFTs = %g ms \n",totalTime);
+	// end_t = GetCounter();
+	// totalTime = (end_t - start_t)/PCFreq; // in ms
+	// printf("Time to prepare IPP DFTs = %g ms \n",totalTime);
 	// ================================================================
-	start_t = GetCounter();
+	// start_t = GetCounter();
 
     // =============/* call the computational routine */==============
 	GROUP_AFFINITY currentGroupAffinity, newGroupAffinity;
@@ -207,15 +207,15 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	
 	// ============== CLEANUP =================
     // close threads
-    printf("Closing threads...\n");
+    // printf("Closing threads...\n");
     for(t=0;t<NUM_THREADS;t++){
         CloseHandle(ThreadList[t]);
 //         printf("Closing threadID %i.. %i\n",(int)ThreadIDList[t],WaitForThread[t]);
     }
-    printf("All threads closed! \n");
-	end_t = GetCounter();
-	totalTime = (end_t - start_t)/PCFreq; // in ms
-	printf("Time for threads to finish = %g ms \n",totalTime);
+    // printf("All threads closed! \n");
+	// end_t = GetCounter();
+	// totalTime = (end_t - start_t)/PCFreq; // in ms
+	// printf("Time for threads to finish = %g ms \n",totalTime);
 	
 	for (t=0; t<NUM_THREADS; t++){
 		ippFree(pSpec[t]);
