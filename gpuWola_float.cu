@@ -25,7 +25,7 @@
 #include <cuda_runtime.h>
 #include <npp.h>
 
-#define NUM_THREADS 12
+#define NUM_THREADS 24
 
 // timing functions
 double PCFreq = 0.0;

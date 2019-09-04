@@ -31,24 +31,24 @@
   // return result;
 // }
 
-__device__
-void d_lla2ecefDeg(float latitude, float longitude, float ellipsoid_height, float *ecef)
-{
-	// convert to rads
-	float lat  = latitude * M_PI / 180;   
-	float lon = longitude * M_PI / 180;  
-	float cos_lat = cos(lat);  
-	float sin_lat = sin(lat);
-	float cos_lon = cos(lon); 
-	float sin_lon = sin(lon);
+// __device__
+// void d_lla2ecefDeg(float latitude, float longitude, float ellipsoid_height, float *ecef)
+// {
+	// // convert to rads
+	// float lat  = latitude * M_PI / 180;   
+	// float lon = longitude * M_PI / 180;  
+	// float cos_lat = cos(lat);  
+	// float sin_lat = sin(lat);
+	// float cos_lon = cos(lon); 
+	// float sin_lon = sin(lon);
 
-	float N  = A_SQ / sqrt( A_SQ*cos_lat*cos_lat + B_SQ*sin_lat*sin_lat);
+	// float N  = A_SQ / sqrt( A_SQ*cos_lat*cos_lat + B_SQ*sin_lat*sin_lat);
 
-	ecef[0]  = (N + ellipsoid_height) * cos_lat * cos_lon;
-	ecef[1]  = (N + ellipsoid_height) * cos_lat * sin_lon;
-	ecef[2]  = (B_SQ*N/A_SQ + ellipsoid_height) * sin_lat;
+	// ecef[0]  = (N + ellipsoid_height) * cos_lat * cos_lon;
+	// ecef[1]  = (N + ellipsoid_height) * cos_lat * sin_lon;
+	// ecef[2]  = (B_SQ*N/A_SQ + ellipsoid_height) * sin_lat;
 	
-}
+// }
 
 __global__
 void grid_search_kernel_float(float *grid_pos, int num_gridpts, float *tdoa_g, float *sigma_g, int num_tdoas, float *sensor_pos_g, int num_sens, int *pairs_g, float *cost)
@@ -177,6 +177,10 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	cudaMalloc((void**)&d_sens_pos, sizeof(float)*num_sens*3);
 	cudaMalloc((void**)&d_cost, sizeof(float)*num_gridpts);
 	cudaMalloc((void**)&d_pairs, sizeof(int)*num_tdoas*2);
+	
+	cudaMemGetInfo( &free_byte, &total_byte );
+	printf("After alloc, GPU memory usage: free = %f MB, total = %f MB\n",(double)free_byte/1024.0/1024.0,(double)total_byte/1024.0/1024.0);
+	
 	
 
 	
