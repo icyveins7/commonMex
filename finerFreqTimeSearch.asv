@@ -8,20 +8,16 @@ function [finefreqfound,timediff] = finerFreqTimeSearch(x_aligned, y_aligned, fi
         % matlab call
 % 		fineshifts = exp(1i*2*pi*(-fineFreq.')*(0:length(x_aligned)-1)/fs); % note that it's -Freq, not +Freq, in the tone used to shift!
         % use mex call?
-        fineshifts = mexIppTone_2018(length(x_aligned),-fineFreq,fs);
+        fineshifts = mexIppTone_2018(length(x_aligned),-fineFreq
 %         fineshifts = zeros(length(fineFreq),length(x_aligned));
 %         for ff = 1:length(fineFreq)
 %             fineshifts(ff,:) = mexIppTone_2018(length(x_aligned),-fineFreq(ff),fs);
 %         end
 %         keyboard;
-% 		pp = zeros(1,length(fineFreq));
-        precomputed = conj(y_aligned).*x_aligned;
-        pp = precomputed*fineshifts;
-% 		for l = 1:length(fineFreq)
-% % 			pp(l) = sum(conj(y_aligned).*x_aligned.*fineshifts(l,:));
-% %             pp(l) = sum(conj(y_aligned).*x_aligned.*fineshifts(:,l).'); % new one is column based
-%             pp(l) = precomputed*fineshifts(:,l);
-% 		end
+		pp = zeros(1,length(fineFreq));
+		for l = 1:length(fineFreq)
+			pp(l) = sum(conj(y_aligned).*x_aligned.*fineshifts(l,:));
+		end
 		[mm,fineFreq_ind] = max(abs(pp));
 		freqfound = fineFreq(fineFreq_ind);
         if (debugPlotsMode)
@@ -35,8 +31,7 @@ function [finefreqfound,timediff] = finerFreqTimeSearch(x_aligned, y_aligned, fi
 	
 %     keyboard;
 	% === Finer Time Resolution ===
-%     x_aligned = x_aligned.*fineshifts(fineFreq_ind,:); % shift to correct frequency
-    x_aligned = x_aligned.*fineshifts(:,fineFreq_ind).'; % shift to correct frequency
+    x_aligned = x_aligned.*fineshifts(fineFreq_ind,:); % shift to correct frequency
 
     x_fft = fft(x_aligned);
     y_fft = fft(y_aligned);
