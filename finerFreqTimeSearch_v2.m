@@ -1,5 +1,5 @@
 % To be used after the sample-level TD/FD correlation done with dot_xcorr or test_complex.
-function [finefreqfound,timediff] = finerFreqTimeSearch(x_aligned, y_aligned, fineRes, freqfound, freqRes, fs, td_scan_range, steeringvec, debugPlotsMode)
+function [finefreqfound,timediff] = finerFreqTimeSearch_v2(x_aligned, y_aligned, fineRes, freqfound, freqRes, fs, td_scan_range, steeringvec, debugPlotsMode)
 	freq = makeFreq(length(x_aligned),fs);
 	% === Finer Frequency Resolution (Multi Step) ===
 	for i = 1:length(fineRes)
