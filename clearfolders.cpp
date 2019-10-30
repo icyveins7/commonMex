@@ -1,4 +1,5 @@
 // Tagged to ProcessMessagesRT Version 1.9.7
+// build with psapi.lib
 #include <iostream>
 #include <string>
 #include <windows.h>
@@ -7,6 +8,8 @@
 #include <tchar.h>
 #include <Shlwapi.h>
 #include <regex>
+#include <psapi.h>
+#include <string.h>
 
 #pragma comment(lib, "User32.lib")
 #pragma comment(lib, "Shlwapi.lib")
@@ -16,10 +19,41 @@
 #define CHANNEL_TYPE_END 3
 #define NUM_CHANNEL_TYPES 2
 
+int StopOnProcessNameAndID( DWORD processID, std::string tiedprocessname){
+	char szProcessName[MAX_PATH];
+	HANDLE hProcess = OpenProcess( PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processID);
+	
+	// if (NULL!=hProcess){
+		HMODULE hMod;
+		DWORD cbNeeded;
+		
+		if (EnumProcessModules( hProcess, &hMod, sizeof(hMod), &cbNeeded) ){
+			GetModuleBaseName( hProcess, hMod, szProcessName, sizeof(szProcessName)/sizeof(char));
+		}
+	// }
+	CloseHandle( hProcess);
+	
+	if(strcmp(szProcessName, tiedprocessname.c_str()) == 0){
+		printf("=======================%s (PID: %u)=======================\n", szProcessName, processID);
+		
+		return 1;
+	}
+	else{
+		return 0;
+	}
+}
+
 int main(int argc, char **argv){
 	if (argc<6){
-		std::cout<<"Arguments are (numChans) (delBackoff) (checkpointpath) (resultspath) (verboseFlag)"<<std::endl;
+		std::cout<<"Arguments are (numChans) (delBackoff) (checkpointpath) (resultspath) (verboseFlag) [optional: tiedprocessname]"<<std::endl;
 		return 1;
+	}
+	std::string tiedprocessname;
+	int process_isTied = 0;
+	if (argc==7){
+		process_isTied = 1;
+		tiedprocessname = std::string(argv[6]);
+		printf("Process is tied to %s, will now close if %s is not running to prevent zombie process!\n", tiedprocessname.c_str(), tiedprocessname.c_str());
 	}
 	
     // read inputs
@@ -85,8 +119,39 @@ int main(int argc, char **argv){
 	// print some initial checks
 	std::cout<<"Searching "<<checkpointpath_dir<<std::endl;
 	
+	// tiedprocess things
+	DWORD aProcesses[1024], cbNeeded, cProcesses;
+	int i;
+	int tiedprocessExists = 1;
+	
     // main deletion loop
     while(true){
+		// before anything, check the processes if needed
+		if (process_isTied){
+			tiedprocessExists = 0; // assume that the process does not exist
+			if( !EnumProcesses( aProcesses, sizeof(aProcesses), &cbNeeded) ) {
+				printf("Failed to EnumProcesses\n");
+			}
+			else{
+				cProcesses = cbNeeded / sizeof(DWORD);
+				
+				for (i=0; i<cProcesses; i++){
+					if( aProcesses[i] != 0){
+						if(StopOnProcessNameAndID( aProcesses[i], tiedprocessname) == 1){ // it means that they found the process!
+							tiedprocessExists = 1;
+							printf("Tiedprocess was found! Continuing loops..\n");
+							break; // don't iterate any more
+						} // so if it finishes iterations and it doesnt exist then tiedprocessExists will still be 0
+					}
+				}
+			}
+			if (!tiedprocessExists){ // then we check if it exists
+				printf("Ending loop since %s does not exist!\n", tiedprocessname.c_str());
+				break;
+			}
+		}
+		
+		
         // iterate over the checkpoint folders
 		hFind = FindFirstFileA(checkpointpath_dir.c_str(), &ffd);
 		FindNextFileA(hFind, &ffd); // read . and ..
