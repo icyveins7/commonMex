@@ -51,7 +51,7 @@ void d_lla2ecefDeg(float latitude, float longitude, float ellipsoid_height, floa
 }
 
 __global__
-void grid_search_kernel_float(float *lats, int latpts, float *lons, int lonpts, float *tdoa_g, float *sigma_g, int num_tdoas, float *sensor_pos_g, int num_sens, int *pairs_g, float *cost)
+void grid_search_kernel_float(float *latlist, int latpts, float *lonlist, int lonpts, float *tdoa_g, float *sigma_g, int num_tdoas, float *sensor_pos_g, int num_sens, int *pairs_g, float *cost)
 {
 	extern __shared__ float s[];
 	float *sensor_pos = s; // num_sens * 3 
@@ -89,9 +89,13 @@ void grid_search_kernel_float(float *lats, int latpts, float *lons, int lonpts, 
 	int idx0, idx1;
 	// float fma_res0, fma_res1;
 	float grid_pos[3];
+	float lat, lon;
 	
 	for (int i = index; i < latpts;  i += stride){ // iterate over latpts
 		for (int j = 0; j < lonpts; j++){
+			lat = latlist[i];
+			lon = lonlist[i];
+			
 			temp_val = 0;
 		
 			// calculate theoretical tdoa and compare
