@@ -1,4 +1,4 @@
-function [qf2_surface, cutoutNorm_dsSq, rxNorm_ds] = gen_xcorr(cutout, rx, selectedFreqRange, chnBW, searchFreq, downsampleRate, outputType, freqDS_factor)
+function [qf2_surface, cutoutNorm_dsSq] = gen_xcorr(cutout, rx, selectedFreqRange, chnBW, searchFreq, downsampleRate, outputType, freqDS_factor)
     % Preprocess to make cutout same length as rx
     cutout_ext = [cutout zeros(1,length(rx)-length(cutout))];
     
@@ -41,12 +41,11 @@ function [qf2_surface, cutoutNorm_dsSq, rxNorm_ds] = gen_xcorr(cutout, rx, selec
     fprintf(1, 'Length of downsampled cutout = %i\n', cutoutlen_ds);
     
     % Frequency downsampling factor
-%     freqDS_factor = 4;
     fprintf(1, 'Skipping frequencies at %i bins/iteration, equivalent to %g Hz resolution.\n', freqDS_factor, chnBW/length(rx) * freqDS_factor);
     
     % Pre-calculate (still padded) downsampled cutout that will be used
     cutout_windowed_ds = ifft(ifftshift(cutout_fft_windowed_ds)) / (length(rx)/length(cutout_fft_windowed_ds)); % adjust IFFT factor for different N (FFT'ed at length(rx) but IFFT'ed at downsampled factor of that)
-    keyboard;
+%     keyboard;
     
     % Pre-calculate shape from cutout
     shape2match = prepareShapematch(cutout_windowed_ds(1:cutoutlen_ds), cutoutlen_ds, chnBW/downsampleRate, chnBW/downsampleRate); % we only prepare this using the exact length expected to generate the shape
@@ -59,6 +58,7 @@ function [qf2_surface, cutoutNorm_dsSq, rxNorm_ds] = gen_xcorr(cutout, rx, selec
     else % now we circular shift the frequencies
         numBins = length(windowIdx);
         numFreqIters = int32(floor( (length(rx_fft) - numBins + 1) / freqDS_factor));
+        fprintf(1, 'Total %i frequency iterations.\n', numFreqIters);
         
 %         if outputType == 0
 %             qf2_surface = zeros(length(dsIdx)-cutoutlen_ds+1, numFreqIters);
@@ -130,8 +130,13 @@ function [qf2_surface, cutoutNorm_dsSq, rxNorm_ds] = gen_xcorr(cutout, rx, selec
 %         end % end of numFreqIters loop
         
         % mexfile ver
+%         tic;
+%         qf2_surface = mexIpp_gen_xcorr_inner(rx_fft, cutout_fft_windowed_conjds, dsIdx, windowIdx, freqDS_factor, numBins, cutoutlen_ds, numFreqIters, cutoutNorm_dsSq);
+%         toc;
+        single_rx_fft = single(rx_fft);
+        single_cutout_fft_windowed_conjds = single(cutout_fft_windowed_conjds);
         tic;
-        qf2_surface = mexIpp_gen_xcorr_inner(rx_fft, cutout_fft_windowed_conjds, dsIdx, windowIdx, freqDS_factor, numBins, cutoutlen_ds, numFreqIters, cutoutNorm_dsSq);
+        qf2_surface = mexIpp_gen_xcorr_inner_32fc(single_rx_fft, single_cutout_fft_windowed_conjds, dsIdx, windowIdx, freqDS_factor, numBins, cutoutlen_ds, numFreqIters, cutoutNorm_dsSq); % pre-convert to singles for speed
         toc;
         
     end % end of if/else for searchFreq condition
