@@ -30,6 +30,9 @@ int readFileData(char *filepath, int numHeaderBytes, void *header, void *data, c
 		else if (dataType == 'd'){
 			numElementsRead = fread(data, sizeof(double), numDataElements, fp);
 		}
+		else{
+			return -2;
+		}
 		
 		fclose(fp);
 	}
@@ -70,7 +73,7 @@ int printArrayData(char rc, char dataType, int startIdx, int numElements, void *
 			floatdata = (float*)data;
 			
 			for (i=startIdx; i<startIdx+numElements; i++){
-				printf("Element %i: %g\n", i, floatdata[i]);
+				printf("Element %i: %f\n", i, floatdata[i]);
 			}
 		}
 		else if (dataType == 'd'){
@@ -78,7 +81,7 @@ int printArrayData(char rc, char dataType, int startIdx, int numElements, void *
 			doubledata = (double*)data;
 			
 			for (i=startIdx; i<startIdx+numElements; i++){
-				printf("Element %i: %g\n", i, doubledata[i]);
+				printf("Element %i: %f\n", i, doubledata[i]);
 			}
 		}
 		else{
@@ -107,7 +110,7 @@ int printArrayData(char rc, char dataType, int startIdx, int numElements, void *
 			floatdata = (float*)data;
 			
 			for (i=startIdx; i<startIdx+numElements; i++){
-				printf("Element %i: %g, %g\n", i, floatdata[i*2 + 0], floatdata[i*2 + 1]);
+				printf("Element %i: %f, %f\n", i, floatdata[i*2 + 0], floatdata[i*2 + 1]);
 			}
 		}
 		else if (dataType == 'd'){
@@ -115,7 +118,7 @@ int printArrayData(char rc, char dataType, int startIdx, int numElements, void *
 			doubledata = (double*)data;
 			
 			for (i=startIdx; i<startIdx+numElements; i++){
-				printf("Element %i: %g, %g\n", i, doubledata[i*2 + 0], doubledata[i*2 + 1]);
+				printf("Element %i: %f, %f\n", i, doubledata[i*2 + 0], doubledata[i*2 + 1]);
 			}
 		}
 		else{
