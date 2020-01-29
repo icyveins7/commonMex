@@ -198,6 +198,13 @@ void wola_front_sm_tuned(int N, int L, int Dec, int nprimePts, Npp16sc *d_in, Np
 /* The gateway function */
 // calling arguments, out = (signal, f_tap, N, Dec)
 void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
+	// initialize with a particular card
+	cudaSetDevice(0);
+	int device;
+	cudaGetDevice(&device);
+	cudaDeviceProp prop;
+	cudaGetDeviceProperties(&prop, device);
+	printf("Current GPU Device: %s\n", prop.name);
 	
     // declare variables
     Npp16sc *h_indata;
