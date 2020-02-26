@@ -45,10 +45,10 @@ function [qf2_surface, cutoutNorm_dsSq] = gen_xcorr(cutout, rx, selectedFreqRang
     
     % Pre-calculate (still padded) downsampled cutout that will be used
     cutout_windowed_ds = ifft(ifftshift(cutout_fft_windowed_ds)) / (length(rx)/length(cutout_fft_windowed_ds)); % adjust IFFT factor for different N (FFT'ed at length(rx) but IFFT'ed at downsampled factor of that)
-%     keyboard;
+    keyboard;
     
-    % Pre-calculate shape from cutout
-    shape2match = prepareShapematch(cutout_windowed_ds(1:cutoutlen_ds), cutoutlen_ds, chnBW/downsampleRate, chnBW/downsampleRate); % we only prepare this using the exact length expected to generate the shape
+%     % Pre-calculate shape from cutout
+%     shape2match = prepareShapematch(cutout_windowed_ds(1:cutoutlen_ds), cutoutlen_ds, chnBW/downsampleRate, chnBW/downsampleRate); % we only prepare this using the exact length expected to generate the shape
     
     if ~searchFreq
         fprintf(1, 'Not implemented yet.\n');
