@@ -61,14 +61,26 @@ unsigned __stdcall threaded_ippsTone(void *pArgs){
 	int i;
 	
 	double phase = 0;
+	double usedFreq = 0;
 	// pick point based on thread number
 	for (i = t_ID; i<numFreq; i=i+NUM_THREADS){
 		phase = 0;
-		if (freq[i]>=0){
+		if (freq[i]>=0 && freq[i]<fs){
 			ippsTone_64fc((Ipp64fc*)&out[i*len], len, 1.0, freq[i]/fs, &phase, ippAlgHintAccurate);
 		}
+		else if (freq[i]<0){
+			usedFreq = freq[i];
+			while (usedFreq < 0){
+				usedFreq = usedFreq + fs;
+			}
+			ippsTone_64fc((Ipp64fc*)&out[i*len], len, 1.0, usedFreq/fs, &phase, ippAlgHintAccurate);
+		}
 		else{
-			ippsTone_64fc((Ipp64fc*)&out[i*len], len, 1.0, (fs+freq[i])/fs, &phase, ippAlgHintAccurate);
+			usedFreq = freq[i];
+			while (usedFreq >= fs){
+				usedFreq = usedFreq - fs;
+			}
+			ippsTone_64fc((Ipp64fc*)&out[i*len], len, 1.0, usedFreq/fs, &phase, ippAlgHintAccurate);
 		}
 	}
 	
@@ -93,14 +105,26 @@ unsigned __stdcall threaded_ippsTone_32f(void *pArgs){
 	int i;
 	
 	float phase = 0;
+	float usedFreq = 0;
 	// pick point based on thread number
 	for (i = t_ID; i<numFreq; i=i+NUM_THREADS){
 		phase = 0;
-		if (freq[i]>=0){
+		if (freq[i]>=0 && freq[i]<fs){
 			ippsTone_32fc((Ipp32fc*)&out[i*len], len, 1.0, freq[i]/(float)fs, &phase, ippAlgHintAccurate);
 		}
+		else if(freq[i]<0){
+			usedFreq = freq[i];
+			while (usedFreq < 0){
+				usedFreq = usedFreq + (float)fs;
+			}
+			ippsTone_32fc((Ipp32fc*)&out[i*len], len, 1.0, usedFreq/(float)fs, &phase, ippAlgHintAccurate);
+		}
 		else{
-			ippsTone_32fc((Ipp32fc*)&out[i*len], len, 1.0, ((float)fs+freq[i])/(float)fs, &phase, ippAlgHintAccurate);
+			usedFreq = freq[i];
+			while (usedFreq >= fs){
+				usedFreq = usedFreq - (float)fs;
+			}
+			ippsTone_32fc((Ipp32fc*)&out[i*len], len, 1.0, usedFreq/(float)fs, &phase, ippAlgHintAccurate);
 		}
 	}
 	
