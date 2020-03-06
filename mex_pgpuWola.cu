@@ -250,9 +250,9 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
     }
 	
 	Dec = (int)mxGetScalar(prhs[3]);
-	if (Dec != N){
-		mexErrMsgTxt("ERROR: Decimation must be equal to number of channels! Other decimation ratios not yet implemented!");
-	}
+	// if (Dec != N){
+		// mexErrMsgTxt("ERROR: Decimation must be equal to number of channels! Other decimation ratios not yet implemented!");
+	// }
 	
 	
 	/* create the output matrix */
