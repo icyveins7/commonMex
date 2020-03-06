@@ -26,6 +26,7 @@ struct t_data{
 	double *thread_freq;
 	int thread_numFreq;
 	double thread_fs;
+	double thread_phase;
 	
 	mxComplexDouble *thread_out;
 };
@@ -36,6 +37,7 @@ struct t_data_32f{
 	float *thread_freq;
 	int thread_numFreq;
 	double thread_fs;
+	double thread_phase;
 	
 	mxComplexSingle *thread_out;
 };
@@ -54,17 +56,18 @@ unsigned __stdcall threaded_ippsTone(void *pArgs){
 	double *freq = inner_data->thread_freq;
 	int numFreq = inner_data->thread_numFreq;
 	double fs = inner_data->thread_fs;
+	double in_phase = inner_data->thread_phase;
 	
 	mxComplexDouble *out = inner_data->thread_out; // cast it here first! or else it cannot be indexed
 	// end of attached variables
 
 	int i;
 	
-	double phase = 0;
+	double phase;
 	double usedFreq = 0;
 	// pick point based on thread number
 	for (i = t_ID; i<numFreq; i=i+NUM_THREADS){
-		phase = 0;
+		phase = in_phase; // reset to the input phase
 		if (freq[i]>=0 && freq[i]<fs){
 			ippsTone_64fc((Ipp64fc*)&out[i*len], len, 1.0, freq[i]/fs, &phase, ippAlgHintAccurate);
 		}
@@ -98,17 +101,18 @@ unsigned __stdcall threaded_ippsTone_32f(void *pArgs){
 	float *freq = inner_data->thread_freq;
 	int numFreq = inner_data->thread_numFreq;
 	double fs = inner_data->thread_fs;
+	double in_phase = inner_data->thread_phase;
 	
 	mxComplexSingle *out = inner_data->thread_out; // cast it here first! or else it cannot be indexed
 	// end of attached variables
 
 	int i;
 	
-	float phase = 0;
+	float phase;
 	float usedFreq = 0;
 	// pick point based on thread number
 	for (i = t_ID; i<numFreq; i=i+NUM_THREADS){
-		phase = 0;
+		phase = (float)in_phase; // reset to the input phase
 		if (freq[i]>=0 && freq[i]<fs){
 			ippsTone_32fc((Ipp32fc*)&out[i*len], len, 1.0, freq[i]/(float)fs, &phase, ippAlgHintAccurate);
 		}
@@ -139,6 +143,7 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	double *freq;
 	float *freq_32f;
 	double fs;
+	double phase;
 	int len;
 	int numFreq;
 
@@ -147,13 +152,18 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 	mxComplexSingle *out_32f;
 
     /* check for proper number of arguments */
-    if (nrhs!=3){
-        mexErrMsgIdAndTxt("MyToolbox:arrayProduct:nrhs","3 Inputs required.");
+    if (nrhs!=4){
+        mexErrMsgIdAndTxt("MyToolbox:arrayProduct:nrhs","4 Inputs required.");
     }
 
 	len = (int)mxGetScalar(prhs[0]);
 	numFreq = (int)mxGetM(prhs[1]) * (int)mxGetN(prhs[1]);
     fs = (double)mxGetScalar(prhs[2]);
+	phase = (double)mxGetScalar(prhs[3]);
+	
+	if (phase<0 || phase >= 2 * IPP_2PI){
+		mexErrMsgTxt("ERROR: Phase must be in the range [0.0, 2pi).");
+	}
 	
 	//start threads
     int t; 
@@ -175,6 +185,7 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 			t_data_array[t].thread_freq = freq;
 			t_data_array[t].thread_numFreq = numFreq;
 			t_data_array[t].thread_fs = fs;
+			t_data_array[t].thread_phase = phase;
 				
 			t_data_array[t].thread_out = out;
 			
@@ -204,6 +215,7 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]){
 			t_data_array_32f[t].thread_freq = freq_32f;
 			t_data_array_32f[t].thread_numFreq = numFreq;
 			t_data_array_32f[t].thread_fs = fs;
+			t_data_array_32f[t].thread_phase = phase;
 				
 			t_data_array_32f[t].thread_out = out_32f;
 			
