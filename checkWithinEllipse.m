@@ -20,5 +20,8 @@ function check = checkWithinEllipse(errorEllipse, point)
         cross_angles(i) = cross_pdt(3);
     end
     
+    
     check = all(cross_angles<0) || all(cross_angles>0);
+
+%     keyboard;
 end
